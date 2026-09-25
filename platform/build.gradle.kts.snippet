@@ -1,0 +1,33 @@
+// Extrait de android/app/build.gradle.kts — seules ces valeurs sont à ajuster
+// après `flutter create`. Ne remplacez pas tout le fichier : il contient aussi
+// la configuration Flutter générée.
+
+android {
+    namespace = "fr.fcpe.montmagny.soumaya"
+
+    compileSdk = flutter.compileSdkVersion
+
+    defaultConfig {
+        applicationId = "fr.fcpe.montmagny.soumaya"
+
+        // audio_service et just_audio exigent au minimum 21. On monte à 23 :
+        // cela évite les contournements de permissions d'exécution propres à
+        // Android 6 et couvre l'écrasante majorité des appareils en service.
+        minSdk = 23
+
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+    }
+
+    // IMPORTANT : ne pas migrer vers AGP 9 pour l'instant. Flutter 3.44+ signale
+    // que la migration des plugins vers AGP 9 n'est pas encore prise en charge.
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}

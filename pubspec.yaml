@@ -1,0 +1,47 @@
+name: soumaya
+description: "Soumaya — lecture et mémorisation du Coran. Mushaf de Médine, 604 pages, lecture audio verset par verset."
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  # Dart 3.12 est fourni par Flutter 3.44+ ; on cible 3.12 pour rester aligné
+  # sur la version stable actuelle (Flutter 3.47 / Dart 3.12).
+  sdk: ">=3.12.0 <4.0.0"
+  # Contrainte dure : just_audio 0.10.x exige Flutter >= 3.27.0 (AGP >= 8.5.2).
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # --- Lecture audio ---
+  just_audio: ^0.10.6
+  audio_service: ^0.18.19
+  audio_session: ^0.2.4
+
+  # --- Réseau / cache ---
+  http: ^1.6.0
+  path_provider: ^2.1.6
+  shared_preferences: ^2.5.5
+
+  # --- Divers ---
+  collection: ^1.19.1
+  meta: ^1.19.0
+  cupertino_icons: ^1.0.9
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Les 604 polices QCF (une par page) ne sont PAS déclarées ici : les déclarer
+  # en tant que familles statiques alourdirait le pubspec et le binaire.
+  # Elles sont chargées dynamiquement par MushafFontProvider (voir
+  # lib/ui/mushaf_font_provider.dart), depuis un asset local si présent, sinon
+  # depuis un CDN configuré et mis en cache disque.
+  assets:
+    - assets/mushaf/
+    - assets/mushaf/qcf2/

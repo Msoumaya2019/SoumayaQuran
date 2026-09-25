@@ -1,0 +1,329 @@
+name: build
+
+# La compilation est entièrement prise en charge par GitHub : aucun SDK Android
+# ni Xcode n'est nécessaire en local. C'est aussi la seule voie possible pour
+# iOS, puisque `flutter build ios` n'est pas enregistré sous Windows.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Le flux ne fait que lire le dépôt : il publie des artefacts, jamais une
+# version. Une étape qui appellerait `gh release create` exigerait au contraire
+# `contents: write` — et un `permissions` de job REMPLACE celui de la racine,
+# il ne s'y ajoute pas.
+permissions:
+  contents: read
+
+# Variables de dépôt attendues (Settings > Secrets and variables > Actions >
+# Variables). Aucune n'est un secret : le client_secret reste sur le proxy.
+#   SOUMAYA_PROXY_BASE_URL    URL du proxy qui délivre les jetons
+#   SOUMAYA_QF_CLIENT_ID      identifiant public de l'application
+#   SOUMAYA_QCF_FONT_BASE_URL base de téléchargement des polices QCF
+#
+# Aucune n'est obligatoire : sans elles l'application se compile, mais ne peut
+# joindre aucun service. Le job le signale au lieu d'échouer, car l'objet de la
+# compilation est ici de prouver que la chaîne d'outils fonctionne.
+env:
+  # Version figée : la 3.47.4 est celle sur laquelle le projet a été analysé,
+  # testé et compilé en local. Ne pas figer ferait dépendre la CI d'une version
+  # qui peut changer sous les pieds. Le minimum requis est 3.27 (contrainte de
+  # just_audio 0.10.x).
+  FLUTTER_VERSION: 3.47.4
+  JAVA_VERSION: "17"
+  # Identifiant du paquet iOS, relu dans ios/Runner.xcodeproj/project.pbxproj.
+  # Les contrôles refusent un IPA qui ne porterait pas celui-là.
+  IOS_BUNDLE_ID: fr.fcpe.montmagny.soumaya
+
+jobs:
+  verifier:
+    name: Analyse et tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Deux secondes contre un quart d'heure : une faute de frappe dans un
+      # script `run:` ne se voit qu'apres l'installation complete de Flutter,
+      # et le message ne nomme pas la cause. Ce controle passe donc en premier.
+      # Il verifie aussi qu'aucune etape ne publie de version sans y avoir droit.
+      - name: Contrôle des flux de travail
+        run: |
+          python3 -c "import yaml" 2>/dev/null \
+            || python3 -m pip install --quiet --disable-pip-version-check pyyaml \
+            || python3 -m pip install --quiet --disable-pip-version-check --break-system-packages pyyaml
+          python3 tools/verifier_flux.py
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # Journalise la version réellement utilisée : le projet exige au moins
+      # Flutter 3.27, contrainte imposée par just_audio 0.10.x.
+      - name: Version de Flutter
+        run: flutter --version
+
+      - name: Dépendances
+        run: flutter pub get
+
+      # Ce portail compare des octets. Sans .gitattributes, core.autocrlf=true
+      # sous Windows met la même révision en CRLF en local et en LF ici : le
+      # contrôle passerait sur la machine et échouerait à distance.
+      - name: Formatage
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Analyse statique
+        run: flutter analyze
+
+      - name: Tests
+        run: flutter test --reporter expanded
+
+  android:
+    name: APK release
+    needs: verifier
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Compilation de l'APK release
+        run: |
+          flutter build apk --release \
+            --dart-define="SOUMAYA_PROXY_BASE_URL=${{ vars.SOUMAYA_PROXY_BASE_URL }}" \
+            --dart-define="SOUMAYA_QF_CLIENT_ID=${{ vars.SOUMAYA_QF_CLIENT_ID }}" \
+            --dart-define="SOUMAYA_QCF_FONT_BASE_URL=${{ vars.SOUMAYA_QCF_FONT_BASE_URL }}"
+
+      - name: Taille de l'APK
+        run: ls -lh build/app/outputs/flutter-apk/app-release.apk
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: soumaya-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  ios:
+    name: IPA non signé (appareil)
+    needs: verifier
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # Journalise la chaîne Apple réellement fournie par l'image. Un Xcode
+      # trop ancien fait échouer la compilation sur un message qui ne nomme
+      # jamais la version.
+      - name: Chaîne d'outils Apple
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          pod --version || echo "CocoaPods absent de l'image — Flutter en aura besoin."
+
+      - run: flutter pub get
+
+      # Le numéro de version vit dans pubspec.yaml et nulle part ailleurs.
+      # Aucun outil ne le fait bouger : il s'écrit à la main. Le flux se
+      # contente de le lire, pour nommer le fichier livré.
+      - name: Version du projet
+        run: |
+          VERSION=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Aucune version lisible dans pubspec.yaml."
+            exit 1
+          fi
+          echo "SOUMAYA_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Version lue dans pubspec.yaml : $VERSION"
+
+      # Les variables de dépôt sont facultatives ici. Une variable absente vaut
+      # la chaîne vide, jamais une erreur — et l'application compilée sans elles
+      # ne joint ni proxy ni API. Le dire maintenant évite de conclure « le build
+      # est cassé » devant un écran vide.
+      - name: Variables de compilation
+        env:
+          SOUMAYA_PROXY_BASE_URL: ${{ vars.SOUMAYA_PROXY_BASE_URL }}
+          SOUMAYA_QF_CLIENT_ID: ${{ vars.SOUMAYA_QF_CLIENT_ID }}
+          SOUMAYA_QCF_FONT_BASE_URL: ${{ vars.SOUMAYA_QCF_FONT_BASE_URL }}
+        run: |
+          manquantes=""
+          for nom in SOUMAYA_PROXY_BASE_URL SOUMAYA_QF_CLIENT_ID SOUMAYA_QCF_FONT_BASE_URL; do
+            if [ -z "$(printenv "$nom" || true)" ]; then
+              manquantes="$manquantes $nom"
+              echo "::warning::La variable de dépôt $nom est vide."
+            fi
+          done
+          if [ -n "$manquantes" ]; then
+            {
+              echo "### Variables de dépôt absentes"
+              echo
+              echo "Vides : \`${manquantes# }\`."
+              echo
+              echo "L'IPA se compile quand même — c'est son objet ici — mais"
+              echo "l'application ne pourra joindre ni le proxy, ni l'API."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Le SDK iOS et Xcode n'existent que sur macOS : cette tâche ne peut pas
+      # être rejouée sur une machine Windows. C'est la raison d'être de la CI.
+      # --no-codesign produit un Runner.app pour appareil, sans certificat
+      # Apple Developer. Il n'est pas installable tel quel : iOS refuse tout
+      # binaire non signé. Il se re-signe ensuite (Sideloadly, AltStore, eSign).
+      - name: Compilation iOS sans signature
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define="SOUMAYA_PROXY_BASE_URL=${{ vars.SOUMAYA_PROXY_BASE_URL }}" \
+            --dart-define="SOUMAYA_QF_CLIENT_ID=${{ vars.SOUMAYA_QF_CLIENT_ID }}" \
+            --dart-define="SOUMAYA_QCF_FONT_BASE_URL=${{ vars.SOUMAYA_QCF_FONT_BASE_URL }}"
+
+      - name: Empaqueter l'IPA
+        run: |
+          set -euo pipefail
+
+          # Ne pas deviner le chemin : le lire. `flutter build ios` écrit sous
+          # build/ios/iphoneos/, mais le nom du bundle vient du projet Xcode.
+          APP=$(find build/ios/iphoneos -maxdepth 1 -name '*.app' -print -quit)
+          if [ -z "$APP" ]; then
+            echo "::error::Aucun .app produit sous build/ios/iphoneos/."
+            find build/ios -maxdepth 3 -name '*.app' -o -maxdepth 3 -type d | head -40
+            exit 1
+          fi
+          echo "Bundle trouvé : $APP"
+
+          # Un IPA est une archive ZIP dont la racine porte Payload/<App>.app.
+          # Il n'y a ni manifeste ni en-tête à produire.
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+
+          IPA="Soumaya-${SOUMAYA_VERSION//+/_}-non-signe.ipa"
+          zip -qry "$IPA" Payload
+          rm -rf Payload
+
+          ls -l "$IPA"
+          echo "IPA=$IPA" >> "$GITHUB_ENV"
+
+      # Le contrôle qui compte : une compilation de simulateur a la forme d'un
+      # IPA sans en avoir la valeur — elle ne s'installera sur aucun iPhone,
+      # même signée. L'Info.plist et le binaire sont deux témoins indépendants,
+      # et l'un peut manquer selon la forme du fichier : les deux sont lus.
+      - name: Identité du binaire — appareil, et non simulateur
+        run: |
+          set -euo pipefail
+
+          rm -rf /tmp/ipa
+          mkdir -p /tmp/ipa
+          unzip -q "$IPA" -d /tmp/ipa
+
+          APP=/tmp/ipa/Payload/Runner.app
+          PLIST="$APP/Info.plist"
+
+          PLATEFORME=$(plutil -extract DTPlatformName raw -o - "$PLIST")
+          SUPPORTEES=$(plutil -extract CFBundleSupportedPlatforms.0 raw -o - "$PLIST")
+          IDENTIFIANT=$(plutil -extract CFBundleIdentifier raw -o - "$PLIST")
+          EXECUTABLE=$(plutil -extract CFBundleExecutable raw -o - "$PLIST")
+
+          echo "DTPlatformName             = $PLATEFORME"
+          echo "CFBundleSupportedPlatforms = $SUPPORTEES"
+          echo "CFBundleIdentifier         = $IDENTIFIANT"
+
+          if [ "$PLATEFORME" != "iphoneos" ]; then
+            echo "::error::Ce n'est pas une compilation pour appareil ($PLATEFORME) : elle ne s'installera sur aucun iPhone, même signée."
+            exit 1
+          fi
+          if [ "$SUPPORTEES" != "iPhoneOS" ]; then
+            echo "::error::CFBundleSupportedPlatforms vaut $SUPPORTEES, attendu iPhoneOS."
+            exit 1
+          fi
+          if [ "$IDENTIFIANT" != "$IOS_BUNDLE_ID" ]; then
+            echo "::error::L'identifiant du paquet est $IDENTIFIANT, attendu $IOS_BUNDLE_ID."
+            exit 1
+          fi
+
+          BINAIRE="$APP/$EXECUTABLE"
+          if [ ! -f "$BINAIRE" ]; then
+            echo "::error::L'exécutable $EXECUTABLE est absent du paquet."
+            exit 1
+          fi
+          BUILD=$(vtool -show-build "$BINAIRE" 2>&1 || true)
+          printf '%s\n' "$BUILD"
+          if printf '%s' "$BUILD" | grep -qi 'IOSSIMULATOR'; then
+            echo "::error::Le binaire déclare la plateforme IOSSIMULATOR."
+            exit 1
+          fi
+
+          # L'absence de profil de provisionnement prouve que le paquet n'est
+          # PAS signé. Elle ne prouve pas qu'il est destiné à un appareil —
+          # c'est le contrôle de plateforme ci-dessus qui le prouve.
+          if [ -e "$APP/embedded.mobileprovision" ]; then
+            echo "::error::Un profil de provisionnement est présent alors que la compilation est déclarée non signée."
+            exit 1
+          fi
+          echo "Aucun profil de provisionnement : le paquet n'est pas signé, comme attendu."
+
+      # Rapport, et non portail. La même recherche a été mesurée dans libapp.so
+      # côté Android ; l'équivalent iOS n'a pas encore été éprouvé. Un portail
+      # qu'on n'a pas éprouvé arrête un build valide pour une raison qui
+      # n'existe pas — il informe donc sans décider.
+      - name: Code embarqué — relevé sans blocage
+        run: |
+          SNAPSHOT=/tmp/ipa/Payload/Runner.app/Frameworks/App.framework/App
+          if [ ! -f "$SNAPSHOT" ]; then
+            echo "::warning::Instantané Dart introuvable à $SNAPSHOT — relevé impossible."
+            find /tmp/ipa/Payload/Runner.app -name 'App' -o -name '*.framework' | head -20
+            exit 0
+          fi
+          for motif in apis.quran.foundation verses.quran.foundation snapshots/mushafs by_page; do
+            compte=$(grep -a -o "$motif" "$SNAPSHOT" | wc -l | tr -d ' ')
+            echo "$motif : $compte occurrence(s)"
+          done
+
+      - name: Résumé
+        if: always()
+        run: |
+          TAILLE=$(stat -f%z "$IPA" 2>/dev/null || echo inconnue)
+          {
+            echo "### IPA non signé — compilation pour appareil"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Fichier | \`$IPA\` |"
+            echo "| Version | \`$SOUMAYA_VERSION\` |"
+            echo "| Identifiant | \`$IOS_BUNDLE_ID\` |"
+            echo "| Taille | $TAILLE octets |"
+            echo
+            echo "**Ce fichier ne s'installe pas tel quel.** iOS refuse tout binaire non signé."
+            echo "Il se re-signe sur un Mac, ou depuis Windows avec un outil de sideload"
+            echo "(Sideloadly, AltStore, eSign), puis s'installe. Ce n'est pas une"
+            echo "compilation de simulateur : il est bien destiné à un appareil."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: soumaya-ipa-non-signee
+          path: ${{ env.IPA }}
+          if-no-files-found: error
+          retention-days: 30

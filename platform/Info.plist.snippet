@@ -1,0 +1,30 @@
+<!--
+  À fusionner dans ios/Runner/Info.plist, au premier niveau du dictionnaire
+  racine <dict>.
+
+  Sans UIBackgroundModes = audio, iOS suspend l'application dès que l'écran
+  s'éteint et la récitation s'arrête. C'est la seule clé à ajouter pour que
+  audio_service fonctionne ; les commandes du centre de contrôle sont fournies
+  par le plugin.
+-->
+<key>UIBackgroundModes</key>
+<array>
+  <string>audio</string>
+</array>
+
+<!--
+  Note : le mode « audio » n'autorise l'exécution en arrière-plan que pendant
+  une lecture réelle. Une application qui reste inactive sans jouer de son peut
+  être terminée par le système. C'est le comportement attendu ici : entre deux
+  versets, la lecture est continue, il n'y a pas de silence prolongé.
+-->
+
+<!--
+  Déclaration de la langue : le Mushaf est en arabe, l'interface en français.
+  Utile si vous ajoutez plus tard flutter_localizations.
+-->
+<key>CFBundleLocalizations</key>
+<array>
+  <string>fr</string>
+  <string>ar</string>
+</array>

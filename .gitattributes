@@ -1,0 +1,28 @@
+# Normalise les fins de ligne dans le dépôt.
+#
+# Sans ce fichier, `core.autocrlf=true` sous Windows écrit la même révision en
+# CRLF sur la machine et en LF dans la CI. Le portail
+# `dart format --set-exit-if-changed` compare des OCTETS : il passerait en local
+# et échouerait à distance, sans que le code soit en cause.
+* text=auto eol=lf
+
+# Les scripts Windows ont besoin de CRLF pour s'exécuter correctement.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Les binaires ne doivent jamais être normalisés.
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.jar binary
+*.keystore binary
+*.jks binary
+
+# Les polices QCF sont des binaires volumineux : on les exclut de la détection
+# de langue et de la coloration syntaxique.
+assets/mushaf/qcf2/** -diff -text
