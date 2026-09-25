@@ -5,6 +5,7 @@ import '../audio/playback_plan.dart';
 import '../config/app_config.dart';
 import '../data/models/mushaf_index.dart';
 import '../data/models/mushaf_layout.dart';
+import '../data/quran_api_exception.dart';
 import '../data/quran_api_service.dart';
 import '../data/reciter_catalog.dart';
 import '../ui/mushaf_font_provider.dart';
@@ -32,6 +33,7 @@ class SoumayaSession extends ChangeNotifier {
 
   SessionStatus _status = SessionStatus.idle;
   String? _errorMessage;
+  bool _configurationManquante = false;
   MushafSnapshot? _snapshot;
   MushafIndex? _index;
   List<ReciterResolution> _reciters = const <ReciterResolution>[];
@@ -41,6 +43,15 @@ class SoumayaSession extends ChangeNotifier {
 
   SessionStatus get status => _status;
   String? get errorMessage => _errorMessage;
+
+  /// Vrai quand l'échec vient d'une configuration absente, et non du réseau.
+  ///
+  /// La distinction commande ce que l'interface propose : « Réessayer » ne
+  /// réparera jamais une adresse de proxy vide, alors qu'un écran de
+  /// configuration, oui. Sans ce drapeau, l'écran d'échec proposait le seul
+  /// bouton qui ne pouvait pas marcher.
+  bool get configurationManquante => _configurationManquante;
+
   MushafSnapshot? get snapshot => _snapshot;
   MushafIndex? get index => _index;
   List<ReciterResolution> get reciters => _reciters;
@@ -58,6 +69,7 @@ class SoumayaSession extends ChangeNotifier {
   Future<void> initialize() async {
     _status = SessionStatus.loading;
     _errorMessage = null;
+    _configurationManquante = false;
     notifyListeners();
 
     try {
@@ -86,6 +98,8 @@ class SoumayaSession extends ChangeNotifier {
     } on Object catch (error) {
       _status = SessionStatus.failed;
       _errorMessage = error.toString();
+      _configurationManquante =
+          error is QuranApiException && error.type == 'configuration_missing';
       notifyListeners();
     }
   }

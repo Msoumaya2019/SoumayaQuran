@@ -26,6 +26,23 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Réseau local, pour le développement.
+
+	     ATS refuse le HTTP en clair. Le proxy de jetons, en développement,
+	     tourne sur la machine du développeur : `http://192.168.x.x:8787`.
+
+	     `NSAllowsLocalNetworking` est la clé étroite prévue pour ce cas : elle
+	     autorise « unqualified domains, .local domains, and IP addresses using
+	     IPv4 or IPv6 » (documentation Apple). Elle n'ouvre PAS l'Internet en
+	     clair — `NSAllowsArbitraryLoads` fait cela, et n'est pas utilisée ici.
+
+	     Nécessaire depuis iOS 17 : à partir de cette version, l'ATS refuse de
+	     nouveau les connexions aux adresses IP par défaut. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

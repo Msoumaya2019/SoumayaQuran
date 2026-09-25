@@ -213,6 +213,75 @@ Limites d'un compte gratuit, à connaître avant de commencer : 7 jours de
 validité, 3 applications simultanées, 10 identifiants d'application par tranche
 de 7 jours.
 
+### Obtenir un accès, et le saisir dans l'application
+
+Le parcours officiel tient en trois étapes — page *Get API access* de la
+documentation :
+
+1. **Créer l'application** dans la
+   [console développeur](https://dev-console.quran.foundation/projects/new) ;
+2. **développer en pre-live** : les nouvelles applications y commencent, et le
+   jeu de données ne contient que les sourates **1 et 2**. Suffisant pour
+   valider la plomberie, inutilisable pour parcourir 604 pages ;
+3. **demander les permissions de production**, qui ne sont pas automatiques.
+
+⚠️ **Le type de client décide de tout.** Il faut créer une application
+**« Backend/server app »**. La documentation est explicite : un client
+*Frontend or mobile app* **ne peut pas** utiliser le flux *Client Credentials*,
+faute de `client_secret`. C'est ce type-là qu'il faut choisir, même si
+l'application qui consomme l'API est mobile — c'est justement le rôle du proxy
+que de porter le secret à sa place.
+
+#### Les saisir sans recompiler
+
+L'adresse du proxy et l'identifiant client sont demandés par l'application
+elle-même, au premier lancement, et restent modifiables ensuite par l'engrenage
+du bandeau supérieur.
+
+C'est un correctif, pas un confort. Ces deux valeurs étaient des **constantes de
+compilation** : un IPA ou un APK compilé sans elles ne pouvait **jamais**
+fonctionner, et celui qui installe l'application — un parent, en pratique — ne
+recompile pas. Les constantes restent, mais comme **valeurs par défaut** : un
+binaire construit par la CI avec la variable de dépôt démarre configuré et ne
+passe jamais par l'écran.
+
+L'écran ne demande **pas** le `client_secret`, et le dit. Le secret reste sur le
+proxy ; l'application ne le voit jamais.
+
+Deux règles y sont appliquées, toutes deux éprouvées par des tests :
+
+- **une adresse terminée par une barre oblique est normalisée** — sans quoi
+  l'application demanderait `https://proxy.fr//qf/token`, que certains serveurs
+  refusent, et le message ne nommerait pas la cause ;
+- **le `http://` en clair n'est accepté que vers une adresse locale**
+  (`localhost`, `127.0.0.1`, `10.x`, `172.16`–`172.31`, `192.168.x`, `169.254.x`,
+  `.local`). Le proxy délivre des jetons d'accès : en clair sur un réseau
+  public, ils sont lisibles par quiconque est sur le chemin. Le refus est
+  textuel et sans résolution DNS, donc vérifiable hors ligne.
+
+Le bouton **Tester la connexion** interroge `GET {proxy}/qf/token` et rapporte
+ce qui s'est réellement passé — code reçu, jeton obtenu, délai dépassé. Il porte
+sur le seul maillon dont la configuration dépend.
+
+#### Pour tester en local, deux permissions de plateforme
+
+Un proxy lancé sur la machine du développeur écoute en `http://` : les deux
+plateformes le refusent par défaut, et le message ne dit jamais que la cause est
+le chiffrement.
+
+- **Android** — `android/app/src/debug/AndroidManifest.xml` autorise le trafic
+  en clair, **pour la variante `debug` uniquement**. La version livrée garde le
+  refus.
+- **iOS** — `Info.plist` déclare `NSAllowsLocalNetworking`, la clé étroite
+  prévue pour le réseau local. Elle n'ouvre pas l'Internet en clair
+  (`NSAllowsArbitraryLoads` ferait cela, et n'est pas utilisée). Nécessaire
+  depuis **iOS 17**, où l'ATS refuse de nouveau les connexions aux adresses IP
+  par défaut — documenté par Apple.
+
+Depuis un téléphone, `127.0.0.1` désigne **le téléphone** : utilisez l'adresse
+de l'ordinateur sur le réseau local. Pour distribuer, servez le proxy en
+**HTTPS** — c'est la seule configuration qui fonctionne aussi hors du domicile.
+
 ### Le proxy
 
 ```bash
@@ -256,7 +325,10 @@ Il neutralise aussi le proxy sur la boucle locale (`no_proxy`), sans quoi
 | `lib/ui/mushaf_page_canvas.dart` | Rendu des 15 lignes, taille de police mesurée |
 | `lib/ui/audio_capsule.dart` | Capsule `BackdropFilter`, estompage automatique |
 | `lib/ui/mushaf_font_provider.dart` | Charge les polices du Mushaf : une par page, plus la police Unicode des marqueurs de fin de verset |
+| `lib/config/app_config.dart` | Constantes : points d'entrée, compteurs du Mushaf, polices |
+| `lib/config/soumaya_settings.dart` | Réglages **d'exécution** (proxy, identifiant client) et leur validation |
 | `lib/config/credits.dart` | Enregistre le crédit exigé par les conditions d'usage des polices |
+| `lib/ui/setup_screen.dart` | Écran de configuration, avec essai de connexion réel |
 | `.github/workflows/build.yml` | Contrôle des flux, analyse, tests, APK release, IPA non signé |
 | `platform/proxy/` | Proxy de jetons, sans dépendance |
 | `tools/lancer_flutter.py` | Lance Flutter depuis Git Bash sous Windows (trois pièges d'environnement, cf. §2) |
@@ -377,7 +449,7 @@ faut le traiter avant publication.
 **Vérifié par exécution en local**, sur Flutter 3.47.4 / Dart 3.13.3 :
 
 - `flutter analyze` → `No issues found!` ;
-- `flutter test` → **58 tests, tous verts** ;
+- `flutter test` → **73 tests, tous verts** ;
 - `flutter build apk --release` → APK produit, puis **ouvert et inspecté**
   (ABI, manifeste, service audio, chaînes de code dans le binaire AOT).
 
@@ -418,6 +490,12 @@ contrôle vert ne prouve rien : ce qui compte est qu'il sache refuser.
   valeurs vides, puis le refus des valeurs contenant un blanc, puis la rédaction
   du résumé — et il doit rougir à chaque fois. Il ne lit pas de texte, il
   exécute un programme : aucune reformulation ne peut le tromper.
+- **la règle de sécurité des réglages** — le refus du HTTP en clair vers un hôte
+  distant, et la borne haute de `172.16.0.0/12`, ont été falsifiés de la même
+  façon : la mutation doit faire rougir `test/soumaya_settings_test.dart`, et le
+  fichier est restauré à l'octet près (empreinte SHA-256 comparée avant et
+  après). Sans cette borne, `172.32.0.1` — qui est **public** — passerait pour
+  local.
 
 **Vérifié par mesure, sans exécution** : l'équilibrage des délimiteurs des
 fichiers Dart, la syntaxe du proxy (analyseur Node), la validité du YAML du
@@ -428,10 +506,10 @@ l'absence de `v4/ttf` établie de même.
 
 **Non vérifié : le comportement à l'exécution sur un appareil.** Rien n'a été
 lancé sur un téléphone — ni la lecture audio, ni la synchronisation verset par
-verset, ni l'affichage d'une page avec sa police. Le binaire publié établit que
-la chaîne de compilation fonctionne de bout en bout ; il ne lit pas encore le
-Mushaf. C'est le premier essai réel qui le dira, et c'est là qu'il faut
-attendre des ajustements.
+verset, ni l'affichage d'une page avec sa police, ni l'écran de configuration.
+Le binaire publié établit que la chaîne de compilation fonctionne de bout en
+bout ; il ne lit pas encore le Mushaf. C'est le premier essai réel qui le dira,
+et c'est là qu'il faut attendre des ajustements.
 
 **Restent à faire** : l'entrée visible du crédit des polices (§4), le
 téléchargement et le cache hors ligne des audio, l'écran de mémorisation
@@ -443,6 +521,9 @@ l'IPA — les deux sont signés avec des clés de développement.
 ## 6. Sources
 
 - Portail développeur : <https://api-docs.quran.foundation/>
+- Obtenir un accès, et le parcours en trois étapes :
+  <https://api-docs.quran.foundation/request-access>
+- Console développeur : <https://dev-console.quran.foundation/projects/new>
 - Content APIs v4 : <https://api-docs.quran.foundation/docs/content_apis_versioned/4.0.0/content-apis/>
 - Endpoint audio par page : `/content/api/v4/recitations/{recitation_id}/by_page/{page_number}`
 - Instantané du Mushaf : `/content/api/v4/resources/snapshots/mushafs/{id}`

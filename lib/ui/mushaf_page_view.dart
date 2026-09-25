@@ -16,9 +16,12 @@ import 'mushaf_theme.dart';
 /// l'écran. Un simple appui masque ou rappelle les contrôles, qui s'estompent
 /// d'eux-mêmes après quelques secondes.
 class MushafPageView extends StatefulWidget {
-  const MushafPageView({super.key, required this.session});
+  const MushafPageView({super.key, required this.session, this.onOpenSettings});
 
   final SoumayaSession session;
+
+  /// Ouvre l'écran de configuration. Absent, l'entrée disparaît du bandeau.
+  final VoidCallback? onOpenSettings;
 
   @override
   State<MushafPageView> createState() => _MushafPageViewState();
@@ -220,6 +223,11 @@ class _MushafPageViewState extends State<MushafPageView> {
           SessionStatus.failed => _FailureView(
             message: session.errorMessage ?? 'Démarrage impossible.',
             onRetry: session.initialize,
+            // « Réessayer » ne répare pas une adresse de proxy absente : on
+            // propose alors ce qui peut réellement la réparer.
+            onConfigure: session.configurationManquante
+                ? widget.onOpenSettings
+                : null,
           ),
           SessionStatus.ready => Stack(
             children: <Widget>[
@@ -262,6 +270,7 @@ class _MushafPageViewState extends State<MushafPageView> {
                 page: _visiblePage,
                 reciterLabel: session.reciterLabel,
                 onTapReciter: _openReciterSelector,
+                onOpenSettings: widget.onOpenSettings,
               ),
               Positioned(
                 left: 0,
@@ -298,19 +307,21 @@ class _MushafPageViewState extends State<MushafPageView> {
   }
 }
 
-/// Bandeau supérieur : numéro de page et récitateur actif.
+/// Bandeau supérieur : numéro de page, récitateur actif, et accès aux réglages.
 class _TopChrome extends StatelessWidget {
   const _TopChrome({
     required this.visible,
     required this.page,
     required this.reciterLabel,
     required this.onTapReciter,
+    this.onOpenSettings,
   });
 
   final bool visible;
   final int page;
   final String reciterLabel;
   final VoidCallback onTapReciter;
+  final VoidCallback? onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -367,6 +378,18 @@ class _TopChrome extends StatelessWidget {
                   ),
                 ),
               ),
+              // Discret et de la même teinte que le reste : il ne s'agit pas
+              // d'inviter à régler quoi que ce soit, seulement de laisser la
+              // porte ouverte une fois l'application installée.
+              if (onOpenSettings != null)
+                IconButton(
+                  onPressed: onOpenSettings,
+                  iconSize: 18,
+                  visualDensity: VisualDensity.compact,
+                  color: MushafTheme.capsuleAccent,
+                  tooltip: 'Réglages de connexion',
+                  icon: const Icon(Icons.settings_outlined),
+                ),
             ],
           ),
         ),
@@ -569,10 +592,17 @@ class _ReciterSheet extends StatelessWidget {
 
 /// Écran d'échec au démarrage, avec la cause réelle.
 class _FailureView extends StatelessWidget {
-  const _FailureView({required this.message, required this.onRetry});
+  const _FailureView({
+    required this.message,
+    required this.onRetry,
+    this.onConfigure,
+  });
 
   final String message;
   final Future<void> Function() onRetry;
+
+  /// Présent seulement quand l'échec vient d'une configuration absente.
+  final VoidCallback? onConfigure;
 
   @override
   Widget build(BuildContext context) {
@@ -607,7 +637,15 @@ class _FailureView extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
-            FilledButton(onPressed: onRetry, child: const Text('Réessayer')),
+            if (onConfigure != null) ...<Widget>[
+              FilledButton(
+                onPressed: onConfigure,
+                child: const Text('Configurer la connexion'),
+              ),
+              const SizedBox(height: 8),
+              TextButton(onPressed: onRetry, child: const Text('Réessayer')),
+            ] else
+              FilledButton(onPressed: onRetry, child: const Text('Réessayer')),
           ],
         ),
       ),

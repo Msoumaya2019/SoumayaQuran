@@ -25,14 +25,24 @@ class QuranApiService {
     required this.tokenSource,
     http.Client? client,
     String? baseUrl,
+    String? clientId,
     MushafCache? cache,
   }) : _client = client ?? http.Client(),
        _baseUrl = baseUrl ?? AppConfig.contentApiBaseUrl,
+       _clientId = clientId ?? AppConfig.clientId,
        _cache = cache ?? MushafCache();
 
   final QfTokenSource tokenSource;
   final http.Client _client;
   final String _baseUrl;
+
+  /// Identifiant public envoyé dans `x-client-id`.
+  ///
+  /// Il vient des réglages d'exécution quand l'utilisateur les a renseignés,
+  /// sinon de la constante compilée. Le `client_secret`, lui, n'entre jamais
+  /// ici : il reste sur le proxy.
+  final String _clientId;
+
   final MushafCache _cache;
 
   /// Champs demandés pour les fichiers audio : sans `fields`, l'API ne renvoie
@@ -293,7 +303,7 @@ class QuranApiService {
         uri,
         headers: <String, String>{
           'x-auth-token': token,
-          'x-client-id': AppConfig.clientId,
+          'x-client-id': _clientId,
           'accept': 'application/json',
         },
       );

@@ -4,4 +4,18 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- HTTP en clair, pour les compilations de DÉVELOPPEMENT uniquement.
+
+         Depuis targetSdk 28, Android refuse le trafic non chiffré : un proxy de
+         jetons lancé en local sur `http://192.168.x.x:8787` échouerait sur un
+         `CleartextNotPermittedException`, sans que rien n'indique que la cause
+         est le chiffrement plutôt que l'adresse.
+
+         Ce fichier ne s'applique QU'À la variante `debug` — jamais à
+         `release`. La version livrée garde donc le refus par défaut, qui est le
+         bon réglage : un proxy distant en clair laisserait lire les jetons
+         d'accès à quiconque est sur le chemin. Pour distribuer, servez le proxy
+         en HTTPS. -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>
