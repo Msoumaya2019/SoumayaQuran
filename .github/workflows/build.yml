@@ -78,6 +78,15 @@ jobs:
           python3 tools/banc_pages.py
           python3 tools/banc_pages_en_ligne.py
 
+      # Le proxy est le SEUL détenteur du `client_secret` : c'est la pièce sur
+      # laquelle repose tout le modèle de sécurité du projet. Ce banc lance le
+      # vrai proxy devant un faux amont, et vérifie — entre autres — que le
+      # secret n'apparaît dans aucune réponse, y compris quand l'amont échoue en
+      # le recopiant dans son message d'erreur. Node est présent sur les
+      # exécuteurs GitHub ; aucune dépendance à installer.
+      - name: Banc du proxy de jetons
+        run: python3 tools/banc_proxy_jetons.py
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin

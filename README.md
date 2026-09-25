@@ -113,6 +113,7 @@ python tools/verifier_pages.py         # les pages publiées tiennent-elles debo
 python tools/verifier_conformite.py    # et disent-elles ce que la fondation exige ?
 python tools/banc_pages.py             # ces deux contrôles-là savent-ils refuser ?
 python tools/banc_pages_en_ligne.py    # et celui du site publié ?
+python tools/banc_proxy_jetons.py      # le proxy laisse-t-il fuir le client_secret ?
 ```
 
 `tools/verifier_ipa.py` s'ajoute à cette liste quand un IPA est sous la main :
@@ -130,8 +131,9 @@ python tools/verifier_pages_en_ligne.py
 Le contrôle des flux passe **en premier dans la CI**, avant l'installation de
 Flutter : il coûte deux secondes, là où une faute de frappe dans un script
 `run:` ne se verrait qu'après l'installation complète, avec un message qui ne
-nomme pas la cause. Les contrôles des pages publiées sont juste après, pour la
-même raison : ils n'ont besoin que de la bibliothèque standard de Python.
+nomme pas la cause. Les contrôles des pages publiées et le banc du proxy sont
+juste après, pour la même raison : ils n'ont besoin que de la bibliothèque
+standard de Python, plus Node pour le second.
 
 `dart format` en premier n'est pas cosmétique : la mise en forme peut *créer*
 des avertissements `curly_braces_in_flow_control_structures` en repliant un
@@ -359,6 +361,7 @@ Il neutralise aussi le proxy sur la boucle locale (`no_proxy`), sans quoi
 | `tools/banc_pages.py` | Falsifie ces deux contrôles par 7 mutations, sur une **copie** de `docs/` — et vérifie que le dépôt n'a pas bougé |
 | `tools/verifier_pages_en_ligne.py` | Confronte le site publié au dépôt, par empreinte, et résout chaque lien interne. Hors CI : il dépend du réseau |
 | `tools/banc_pages_en_ligne.py` | Falsifie ce contrôle via un serveur local : contenu différent de même longueur, et base injoignable |
+| `tools/banc_proxy_jetons.py` | Lance le **vrai** proxy devant un faux amont : le jeton arrive, l'amont est authentifié, et le `client_secret` n'apparaît dans **aucune** réponse |
 
 ### Sémantique de la répétition
 
@@ -520,7 +523,7 @@ première version, avant qu'il n'affiche du texte coranique.
   (ABI, manifeste, service audio, chaînes de code dans le binaire AOT).
 
 **Vérifié par la CI**, premier passage vert du premier coup, trois travaux sur
-trois : contrôle des flux (105 vérifications), analyse et tests, APK,
+trois : contrôle des flux (108 vérifications), analyse et tests, APK,
 IPA.
 
 **Vérifié sur le fichier publié, après retéléchargement anonyme** — c'est le
@@ -548,7 +551,7 @@ plusieurs contrôles coexistent, **lequel** refuse.
   `on` en booléen (schéma YAML 1.1) et le contrôle accusait un déclencheur
   absent sur un flux valide ; et la recherche de fermeture d'expression,
   appliquée à du JSON, trouvait les accolades du JSON au lieu de celles de
-  l'expression. Le contrôle en compte **105** aujourd'hui.
+  l'expression. Le contrôle en compte **108** aujourd'hui.
 - `tools/banc_verifier_ipa.py` — 4 cas : compilation de simulateur, binaire de
   simulateur dissimulé sous un `Info.plist` d'appareil, code Dart absent, et un
   témoin qui doit passer.
@@ -570,6 +573,21 @@ plusieurs contrôles coexistent, **lequel** refuse.
   local sur la boucle locale (**aucun accès réseau externe**) : contenu
   **différent de même longueur** — un contrôle qui comparerait les tailles
   passerait — et base injoignable.
+- `tools/banc_proxy_jetons.py` — 10 cas : le premier test du proxy, la pièce sur
+  laquelle repose tout le modèle de sécurité. Il lance le **vrai**
+  `qf-token-proxy.mjs` devant un faux amont sur la boucle locale, et vérifie que
+  l'amont est bien authentifié par `client_id` + `client_secret`, que le jeton
+  est **mis en cache** (un seul échange amont pour deux demandes), les refus
+  (404, 405), la limite de débit (429), la panne d'amont (502) et le message
+  générique. L'assertion portante est la dernière : le `client_secret`
+  n'apparaît dans **aucune** réponse — y compris quand l'amont échoue en le
+  recopiant dans son message d'erreur, le cas qu'un proxy naïf relaierait.
+  Falsifié dans les deux sens : un proxy muté pour relayer le corps d'erreur
+  amont fait rougir le cas, et la limite de débit désactivée fait rougir le sien.
+  Le détail d'une assertion y est un **appelable**, jamais une chaîne : une
+  chaîne serait construite avant l'appel, donc aussi quand la condition est
+  vraie — un `fuites[0]` sur une liste vide faisait ainsi tomber le banc sur un
+  cas qui **passait**.
 - **la règle de sécurité des réglages** — le refus du HTTP en clair vers un hôte
   distant, et la borne haute de `172.16.0.0/12`, ont été falsifiés de la même
   façon : la mutation doit faire rougir `test/soumaya_settings_test.dart`, et le
