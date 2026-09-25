@@ -62,6 +62,22 @@ jobs:
       - name: Banc des définitions de compilation
         run: python3 tools/banc_defines_dart.py --falsifier
 
+      # Les documents publiés sont lus par un tiers, hors de l'application : rien
+      # ne les compile, rien ne les teste, et GitHub Pages publie une page cassée
+      # sans broncher. Deux contrôles et leur banc, sans aucune dépendance hors de
+      # la bibliothèque standard — donc aussi peu coûteux que le contrôle des flux,
+      # et pour la même raison placés avant l'installation de Flutter.
+      #
+      # Le banc travaille sur une COPIE de `docs/`, hors du dépôt : un banc qui
+      # sauvegarde puis restaure abîme ce qu'il touche (`write_text` traduit `\n`
+      # en `\r\n` sous Windows). Il vérifie en outre que le dépôt n'a pas bougé.
+      - name: Contrôle des pages publiées
+        run: |
+          python3 tools/verifier_pages.py
+          python3 tools/verifier_conformite.py
+          python3 tools/banc_pages.py
+          python3 tools/banc_pages_en_ligne.py
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin

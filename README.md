@@ -102,22 +102,36 @@ de référence, pour relire ce qui a été modifié et pourquoi).
 flutter pub get
 dart format lib test          # avant l'analyse, pas après
 flutter analyze               # No issues found!
-flutter test                  # 58 tests, tous verts
+flutter test                  # 80 tests, tous verts
 
 # Les contrôles qui ne demandent ni Flutter ni Mac :
 python tools/verifier_flux.py          # le flux de travail est-il bien formé ?
 python tools/banc_verifier_flux.py     # et ce contrôle sait-il refuser ?
 python tools/banc_defines_dart.py      # les --dart-define partent-ils à bon escient ?
 python tools/banc_defines_dart.py --falsifier   # et ce contrôle-là ?
+python tools/verifier_pages.py         # les pages publiées tiennent-elles debout ?
+python tools/verifier_conformite.py    # et disent-elles ce que la fondation exige ?
+python tools/banc_pages.py             # ces deux contrôles-là savent-ils refuser ?
+python tools/banc_pages_en_ligne.py    # et celui du site publié ?
 ```
 
 `tools/verifier_ipa.py` s'ajoute à cette liste quand un IPA est sous la main :
 il lit un fichier livré, il ne peut donc pas tourner avant qu'il existe.
 
+`tools/verifier_pages_en_ligne.py` **n'est pas un portail de CI** : il dépend du
+réseau et d'une construction GitHub Pages qui met une à deux minutes. Il se lance
+après une publication, et confronte ce que le site **sert** à ce que le dépôt
+**contient** :
+
+```bash
+python tools/verifier_pages_en_ligne.py
+```
+
 Le contrôle des flux passe **en premier dans la CI**, avant l'installation de
 Flutter : il coûte deux secondes, là où une faute de frappe dans un script
 `run:` ne se verrait qu'après l'installation complète, avec un message qui ne
-nomme pas la cause.
+nomme pas la cause. Les contrôles des pages publiées sont juste après, pour la
+même raison : ils n'ont besoin que de la bibliothèque standard de Python.
 
 `dart format` en premier n'est pas cosmétique : la mise en forme peut *créer*
 des avertissements `curly_braces_in_flow_control_structures` en repliant un
@@ -339,7 +353,12 @@ Il neutralise aussi le proxy sur la boucle locale (`no_proxy`), sans quoi
 | `tools/defines_dart.py` | Décide quels `--dart-define` partent en compilation — et n'en passe aucun de vide |
 | `tools/banc_defines_dart.py` | Éprouve ce choix dans un environnement fabriqué, puis se falsifie lui-même |
 | `.gitattributes` | Fins de ligne figées : la même révision doit se présenter pareil en local et en CI. **Ce n'est pas une exigence de `dart format`** — mesuré, il tolère le CRLF (`Formatted 24 files (0 changed)` sur 51 fichiers en CRLF) ; c'est une exigence de lisibilité et de `diff` |
-| `docs/privacy/`, `docs/terms/` | Les **deux documents** que les Developer Terms §3.2 exigent : politique de confidentialité et conditions d'utilisation, servis par GitHub Pages |
+| `docs/` | Les **deux documents** que les Developer Terms §3.2 exigent — politique de confidentialité et conditions d'utilisation — et une page d'accueil pour que la racine du site ne rende pas 404. Publiés par GitHub Pages depuis `main` / `/docs` : `https://msoumaya2019.github.io/SoumayaQuran/privacy/` et `…/terms/` |
+| `tools/verifier_pages.py` | Contrôle les pages publiées : structure par pile, marqueurs non remplis dans le **texte affiché**, coordonnées lisibles, liens internes **relatifs** |
+| `tools/verifier_conformite.py` | Confronte les deux documents à la checklist de la fondation, exigence par exigence |
+| `tools/banc_pages.py` | Falsifie ces deux contrôles par 7 mutations, sur une **copie** de `docs/` — et vérifie que le dépôt n'a pas bougé |
+| `tools/verifier_pages_en_ligne.py` | Confronte le site publié au dépôt, par empreinte, et résout chaque lien interne. Hors CI : il dépend du réseau |
+| `tools/banc_pages_en_ligne.py` | Falsifie ce contrôle via un serveur local : contenu différent de même longueur, et base injoignable |
 
 ### Sémantique de la répétition
 
@@ -501,7 +520,7 @@ première version, avant qu'il n'affiche du texte coranique.
   (ABI, manifeste, service audio, chaînes de code dans le binaire AOT).
 
 **Vérifié par la CI**, premier passage vert du premier coup, trois travaux sur
-trois : contrôle des flux (96 vérifications à l'époque), analyse et tests, APK,
+trois : contrôle des flux (105 vérifications), analyse et tests, APK,
 IPA.
 
 **Vérifié sur le fichier publié, après retéléchargement anonyme** — c'est le
@@ -520,15 +539,16 @@ seul contrôle qui vaille pour une livraison :
 Un artefact de flux de travail, lui, répond **401** à un téléchargement
 anonyme : c'est ce qui justifie la version publiée plutôt que le seul artefact.
 
-**Les trois contrôles de ce dépôt ont été falsifiés avant d'y croire.** Un
-contrôle vert ne prouve rien : ce qui compte est qu'il sache refuser.
+**Chaque contrôle de ce dépôt a été falsifié avant d'y croire.** Un contrôle
+vert ne prouve rien : ce qui compte est qu'il sache refuser — et, quand
+plusieurs contrôles coexistent, **lequel** refuse.
 
 - `tools/banc_verifier_flux.py` — 13 cas, dont un témoin. Deux trous trouvés
   dans le contrôle lui-même par le banc, pas par la relecture : PyYAML résout
   `on` en booléen (schéma YAML 1.1) et le contrôle accusait un déclencheur
   absent sur un flux valide ; et la recherche de fermeture d'expression,
   appliquée à du JSON, trouvait les accolades du JSON au lieu de celles de
-  l'expression. Le contrôle en compte **102** aujourd'hui.
+  l'expression. Le contrôle en compte **105** aujourd'hui.
 - `tools/banc_verifier_ipa.py` — 4 cas : compilation de simulateur, binaire de
   simulateur dissimulé sous un `Info.plist` d'appareil, code Dart absent, et un
   témoin qui doit passer.
@@ -537,6 +557,19 @@ contrôle vert ne prouve rien : ce qui compte est qu'il sache refuser.
   valeurs vides, puis le refus des valeurs contenant un blanc, puis la rédaction
   du résumé — et il doit rougir à chaque fois. Il ne lit pas de texte, il
   exécute un programme : aucune reformulation ne peut le tromper.
+- `tools/banc_pages.py` — 7 mutations, dont un témoin, sur une **copie** de
+  `docs/` prise hors du dépôt : un banc qui sauvegarde puis restaure abîme ce
+  qu'il touche. Chaque mutation **nomme le contrôle** qui doit rougir **et le
+  marqueur** qu'il doit produire. Exiger seulement « au moins un contrôle a
+  rougi » laisserait passer le cas où c'est le **mauvais** qui réagit : le
+  contrôle visé n'aurait alors jamais rien démontré. Le banc exige donc aussi
+  qu'au moins un cas fasse rougir `verifier_conformite.py` **seul** — sans quoi
+  un audit qui ne saurait dire que « oui » passerait. Il vérifie enfin, par
+  empreinte SHA-256, que le dépôt n'a pas bougé.
+- `tools/banc_pages_en_ligne.py` — 3 cas, dont un témoin, servis par un serveur
+  local sur la boucle locale (**aucun accès réseau externe**) : contenu
+  **différent de même longueur** — un contrôle qui comparerait les tailles
+  passerait — et base injoignable.
 - **la règle de sécurité des réglages** — le refus du HTTP en clair vers un hôte
   distant, et la borne haute de `172.16.0.0/12`, ont été falsifiés de la même
   façon : la mutation doit faire rougir `test/soumaya_settings_test.dart`, et le
