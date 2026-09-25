@@ -114,6 +114,7 @@ python tools/verifier_conformite.py    # et disent-elles ce que la fondation exi
 python tools/banc_pages.py             # ces deux contrôles-là savent-ils refuser ?
 python tools/banc_pages_en_ligne.py    # et celui du site publié ?
 python tools/banc_proxy_jetons.py      # le proxy laisse-t-il fuir le client_secret ?
+python tools/banc_verifier_identifiants_qf.py --falsifier   # et ce banc-là ?
 ```
 
 `tools/verifier_ipa.py` s'ajoute à cette liste quand un IPA est sous la main :
@@ -127,6 +128,21 @@ après une publication, et confronte ce que le site **sert** à ce que le dépô
 ```bash
 python tools/verifier_pages_en_ligne.py
 ```
+
+`tools/verifier_identifiants_qf.py` **n'est pas un portail de CI** non plus, et pour une raison plus
+forte : il exige de **vrais identifiants**, qui n'ont rien à faire dans les secrets d'un dépôt public.
+Il interroge le point d'échange réel et rend un verdict par couple. Le secret se passe par
+l'environnement — jamais en argument, où il resterait dans l'historique du shell :
+
+```bash
+set -a; . ~/.soumaya-qf.env; set +a
+QF_CLIENT_ID=… QF_CLIENT_SECRET=… QF_ANCIEN_SECRET=… python tools/verifier_identifiants_qf.py
+```
+
+Avec `QF_ANCIEN_SECRET`, il exige les **deux** : le courant accepté, l'ancien refusé. C'est la seule
+preuve qu'une rotation a eu lieu — un contrôle qui accepterait tout passerait les cas d'acceptation, et
+un contrôle qui refuserait tout passerait les cas de refus. Le secret n'est jamais affiché, seulement
+son **empreinte** tronquée, qui suffit à vérifier qu'on a bien éprouvé deux chaînes différentes.
 
 Le contrôle des flux passe **en premier dans la CI**, avant l'installation de
 Flutter : il coûte deux secondes, là où une faute de frappe dans un script
@@ -362,6 +378,8 @@ Il neutralise aussi le proxy sur la boucle locale (`no_proxy`), sans quoi
 | `tools/verifier_pages_en_ligne.py` | Confronte le site publié au dépôt, par empreinte, et résout chaque lien interne. Hors CI : il dépend du réseau |
 | `tools/banc_pages_en_ligne.py` | Falsifie ce contrôle via un serveur local : contenu différent de même longueur, et base injoignable |
 | `tools/banc_proxy_jetons.py` | Lance le **vrai** proxy devant un faux amont : le jeton arrive, l'amont est authentifié, et le `client_secret` n'apparaît dans **aucune** réponse |
+| `tools/verifier_identifiants_qf.py` | Éprouve un couple `client_id` / `client_secret` contre l'amont réel. Avec `QF_ANCIEN_SECRET`, **prouve une rotation**. Hors CI : il exige de vrais identifiants |
+| `tools/banc_verifier_identifiants_qf.py` | Falsifie ce contrôle par 9 cas sur un faux amont local, plus **5 mutations du contrôle lui-même** (`--falsifier`) |
 
 ### Sémantique de la répétition
 
@@ -588,6 +606,18 @@ plusieurs contrôles coexistent, **lequel** refuse.
   chaîne serait construite avant l'appel, donc aussi quand la condition est
   vraie — un `fuites[0]` sur une liste vide faisait ainsi tomber le banc sur un
   cas qui **passait**.
+- `tools/banc_verifier_identifiants_qf.py` — 9 cas sur un faux amont local
+  (**aucun accès réseau externe**), puis **5 mutations du contrôle lui-même**.
+  Il a trouvé un vrai défaut au premier passage : sous un **proxy
+  d'environnement**, un amont injoignable remonte en `502`, et le contrôle lisait
+  ce `502` comme un **refus d'identifiant** — il aurait annoncé « votre secret
+  est mort » alors que le réseau avait échoué. Le contrôle a donc **trois
+  verdicts, pas deux** : accepté, refusé, ou **non mesurable**, et seul un `4xx`
+  (hors `429`) accuse le secret. Le mode `--falsifier` mute ensuite le contrôle
+  et exige que le banc rougisse **sur la vérification nommée** — cinq mutations,
+  dont « le troisième verdict disparaît », « l'ancien survivant n'est plus un
+  défaut », « le secret est imprimé », « l'empreinte disparaît » et « deux
+  secrets identiques ne sont plus refusés ».
 - **la règle de sécurité des réglages** — le refus du HTTP en clair vers un hôte
   distant, et la borne haute de `172.16.0.0/12`, ont été falsifiés de la même
   façon : la mutation doit faire rougir `test/soumaya_settings_test.dart`, et le
