@@ -380,6 +380,7 @@ Il neutralise aussi le proxy sur la boucle locale (`no_proxy`), sans quoi
 | `tools/banc_proxy_jetons.py` | Lance le **vrai** proxy devant un faux amont : le jeton arrive, l'amont est authentifié, et le `client_secret` n'apparaît dans **aucune** réponse |
 | `tools/verifier_identifiants_qf.py` | Éprouve un couple `client_id` / `client_secret` contre l'amont réel. Avec `QF_ANCIEN_SECRET`, **prouve une rotation**. Hors CI : il exige de vrais identifiants |
 | `tools/banc_verifier_identifiants_qf.py` | Falsifie ce contrôle par 9 cas sur un faux amont local, plus **5 mutations du contrôle lui-même** (`--falsifier`) |
+| `PROCEDURE-ROTATION-SECRET.md` | La procédure d'exploitation : tourner le `client_secret`, **prouver** la rotation, signaler l'exposition, et renseigner les deux URL exigées par §3.2. Aucun secret dedans, jamais |
 
 ### Sémantique de la répétition
 
