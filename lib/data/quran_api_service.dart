@@ -382,11 +382,31 @@ class QuranApiService {
 /// la conserver évite de rejouer une requête volumineuse à chaque lancement.
 /// Le dossier est injectable pour permettre les tests sans `path_provider`.
 class MushafCache {
-  MushafCache({this.directory, this.schemaVersion = 1});
+  MushafCache({
+    this.directory,
+    this.schemaVersion = 1,
+    this.maxAge = maxAgeParDefaut,
+  });
 
   /// Dossier du cache. `null` = dossier de support de l'application.
   final Directory? directory;
   final int schemaVersion;
+
+  /// Durée maximale de conservation d'un contenu mis en cache.
+  ///
+  /// Ce n'est pas un réglage de confort : c'est une **condition d'usage**.
+  /// Les Developer Terms de la Quran Foundation posent que le contenu ne doit
+  /// pas être conservé plus d'une semaine — « Do not cache or store QF Content
+  /// for more than 1 week unless QF has expressly permitted longer storage, or
+  /// the content is available through the Content Sync APIs. »
+  ///
+  /// L'application utilise l'instantané ordinaire du Mushaf, pas Content Sync :
+  /// c'est donc le délai d'une semaine qui s'applique. Un cache plus vieux est
+  /// traité comme absent, ce qui déclenche un retéléchargement — au pire une
+  /// requête par semaine et par appareil.
+  final Duration maxAge;
+
+  static const Duration maxAgeParDefaut = Duration(days: 7);
 
   static const String _fileName = 'mushaf_layout.json';
 
@@ -405,7 +425,20 @@ class MushafCache {
     return File('${resolved.path}${Platform.pathSeparator}$_fileName');
   }
 
-  /// Renvoie l'index mis en cache, ou `null` si absent ou illisible.
+  /// Vrai si l'entrée datée de [savedAt] dépasse [maxAge].
+  ///
+  /// `saved_at` prime sur la date du fichier : celle-ci peut changer pour une
+  /// raison étrangère au contenu — une copie, une restauration de sauvegarde —
+  /// et une sauvegarde restaurée rajeunirait un contenu ancien. En l'absence
+  /// du champ (cache écrit par une version antérieure), la date du fichier fait
+  /// foi : mieux vaut retélécharger que conserver au-delà du délai autorisé.
+  bool _estPerime(String? savedAt, DateTime modification) {
+    final ecrit = savedAt == null ? null : DateTime.tryParse(savedAt);
+    final reference = ecrit?.toUtc() ?? modification.toUtc();
+    return DateTime.now().toUtc().difference(reference) > maxAge;
+  }
+
+  /// Renvoie l'index mis en cache, ou `null` si absent, illisible ou périmé.
   Future<MushafIndex?> read() async {
     final snapshot = await readSnapshot();
     if (snapshot == null) return null;
@@ -440,6 +473,9 @@ class MushafCache {
   }
 
   /// Lit uniquement l'instantané du Mushaf depuis le disque.
+  ///
+  /// C'est ici que le délai est appliqué : [read] passe par cette méthode, donc
+  /// les deux chemins de lecture sont couverts par un seul contrôle.
   Future<MushafSnapshot?> readSnapshot() async {
     final file = await _resolveFile();
     if (file == null || !await file.exists()) return null;
@@ -447,6 +483,12 @@ class MushafCache {
       final decoded = jsonDecode(await file.readAsString());
       if (decoded is! Map<String, dynamic>) return null;
       if ((decoded['schema_version'] as num?)?.toInt() != schemaVersion) {
+        return null;
+      }
+      if (_estPerime(
+        decoded['saved_at'] as String?,
+        await file.lastModified(),
+      )) {
         return null;
       }
       final rawSnapshot = decoded['snapshot'];

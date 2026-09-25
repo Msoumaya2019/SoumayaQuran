@@ -381,14 +381,42 @@ class _TopChrome extends StatelessWidget {
               // Discret et de la même teinte que le reste : il ne s'agit pas
               // d'inviter à régler quoi que ce soit, seulement de laisser la
               // porte ouverte une fois l'application installée.
+              //
+              // Il porte aussi l'accès aux crédits : les conditions de la Quran
+              // Foundation demandent de créditer la fondation « somewhere
+              // reasonably accessible in your application ». Un registre de
+              // licences qu'aucun écran n'ouvre ne remplit pas cette condition.
               if (onOpenSettings != null)
-                IconButton(
-                  onPressed: onOpenSettings,
+                PopupMenuButton<_MenuBandeau>(
+                  tooltip: 'Réglages et crédits',
                   iconSize: 18,
-                  visualDensity: VisualDensity.compact,
-                  color: MushafTheme.capsuleAccent,
-                  tooltip: 'Réglages de connexion',
-                  icon: const Icon(Icons.settings_outlined),
+                  padding: EdgeInsets.zero,
+                  color: MushafTheme.paper,
+                  icon: const Icon(
+                    Icons.settings_outlined,
+                    color: MushafTheme.capsuleAccent,
+                  ),
+                  onSelected: (choix) => switch (choix) {
+                    _MenuBandeau.reglages => onOpenSettings!(),
+                    _MenuBandeau.credits => showLicensePage(
+                      context: context,
+                      applicationName: 'Soumaya',
+                      // Pas de numéro de version : il vit dans pubspec.yaml et
+                      // nulle part ailleurs, et le recopier ici créerait un
+                      // second endroit à tenir à jour, qui mentirait vite.
+                    ),
+                  },
+                  itemBuilder: (context) =>
+                      const <PopupMenuEntry<_MenuBandeau>>[
+                        PopupMenuItem<_MenuBandeau>(
+                          value: _MenuBandeau.reglages,
+                          child: Text('Réglages de connexion'),
+                        ),
+                        PopupMenuItem<_MenuBandeau>(
+                          value: _MenuBandeau.credits,
+                          child: Text('À propos et crédits'),
+                        ),
+                      ],
                 ),
             ],
           ),
@@ -397,6 +425,9 @@ class _TopChrome extends StatelessWidget {
     );
   }
 }
+
+/// Entrées du menu du bandeau.
+enum _MenuBandeau { reglages, credits }
 
 /// Feuille de sélection de plage de versets.
 class _RangeSheet extends StatefulWidget {

@@ -57,6 +57,16 @@ key.properties
 *.cer
 *.pem
 
+# Secrets d'exécution : identifiants du proxy, du client OAuth2, du fournisseur.
+# Le dépôt est PUBLIC : un secret poussé une fois y reste, dans l'historique,
+# même après suppression du fichier. Ces fichiers ne doivent donc jamais être
+# suivis, et l'historique d'un dépôt public se considère comme définitif.
+.env
+.env.*
+!.env.exemple
+*.secret
+secrets/
+
 # Sauvegardes locales et journaux de commande.
 .sauvegarde/
 *.log

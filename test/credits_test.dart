@@ -19,23 +19,43 @@ Future<List<String>> _lignesDeCredits() async {
 }
 
 void main() {
-  group('crédit des polices', () {
+  group('crédits', () {
     setUp(LicenseRegistry.reset);
 
-    test('la mention exigée par la licence est enregistrée', () async {
+    test('la mention exigée pour les polices est enregistrée', () async {
       enregistrerCredits();
 
-      final lignes = await _lignesDeCredits();
-      final texte = lignes.join('\n');
+      final texte = (await _lignesDeCredits()).join('\n');
 
       // La formule est imposée par les conditions d'usage : on la compare au
       // mot, pour qu'une reformulation bien intentionnée ne passe pas.
       expect(texte, contains(AppConfig.fontCredit));
-      expect(texte, contains('Quran Foundation'));
+      expect(texte, contains('Quran fonts provided by Quran Foundation.'));
     });
 
     test(
-      'les polices sont présentées comme intégrées, jamais redistribuées',
+      'la mention exigée pour le contenu est enregistrée, elle aussi',
+      () async {
+        enregistrerCredits();
+
+        final texte = (await _lignesDeCredits()).join('\n');
+
+        // Deux obligations distinctes, deux formules distinctes. N'en tenir
+        // qu'une est le défaut le plus probable : les deux phrases commencent
+        // par les mêmes mots.
+        expect(texte, contains(AppConfig.contentCredit));
+        expect(texte, contains('Quran data provided by Quran Foundation.'));
+      },
+    );
+
+    test('les deux mentions ne se confondent pas', () {
+      expect(AppConfig.fontCredit, isNot(AppConfig.contentCredit));
+      expect(AppConfig.fontCredit, contains('fonts'));
+      expect(AppConfig.contentCredit, contains('data'));
+    });
+
+    test(
+      'les fichiers ne sont ni revendus, ni redistribués séparément',
       () async {
         enregistrerCredits();
 
@@ -51,12 +71,13 @@ void main() {
     );
 
     test('sans appel, rien n\'est enregistré', () async {
-      // Le témoin : si le registre contenait déjà la mention, les deux tests
+      // Le témoin : si le registre contenait déjà les mentions, les tests
       // ci-dessus seraient verts même sans `enregistrerCredits()`, et ils ne
       // prouveraient rien.
       final texte = (await _lignesDeCredits()).join('\n');
 
       expect(texte, isNot(contains(AppConfig.fontCredit)));
+      expect(texte, isNot(contains(AppConfig.contentCredit)));
     });
   });
 }

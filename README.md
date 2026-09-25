@@ -327,7 +327,7 @@ Il neutralise aussi le proxy sur la boucle locale (`no_proxy`), sans quoi
 | `lib/ui/mushaf_font_provider.dart` | Charge les polices du Mushaf : une par page, plus la police Unicode des marqueurs de fin de verset |
 | `lib/config/app_config.dart` | Constantes : points d'entrée, compteurs du Mushaf, polices |
 | `lib/config/soumaya_settings.dart` | Réglages **d'exécution** (proxy, identifiant client) et leur validation |
-| `lib/config/credits.dart` | Enregistre le crédit exigé par les conditions d'usage des polices |
+| `lib/config/credits.dart` | Enregistre les **deux** mentions exigées : celle des polices et celle du contenu |
 | `lib/ui/setup_screen.dart` | Écran de configuration, avec essai de connexion réel |
 | `.github/workflows/build.yml` | Contrôle des flux, analyse, tests, APK release, IPA non signé |
 | `platform/proxy/` | Proxy de jetons, sans dépendance |
@@ -427,14 +427,47 @@ dans `assets/mushaf/qcf2/` et ils seront embarqués. La CI ne les a pas, donc
 l'application livrée télécharge à la demande et met en cache sur disque. À
 198,2 Mio, c'est aussi le choix qui garde l'APK à 51 Mo plutôt qu'à 250.
 
-### Le crédit
+### Le crédit, et l'entrée qui y mène
 
-`lib/config/credits.dart` enregistre la mention exigée dans le registre de
-licences de Flutter, à l'endroit où sont déjà tous les crédits des paquets.
-**Il reste à poser l'entrée qui y mène** : aucun écran n'ouvre
-`showLicensePage` aujourd'hui, donc la mention est enregistrée mais pas encore
-lisible par un utilisateur. C'est le seul point de licence encore ouvert, et il
-faut le traiter avant publication.
+Deux mentions sont exigées, et elles ne disent pas la même chose :
+
+| Portée | Formule imposée |
+|---|---|
+| Polices | « Quran fonts provided by Quran Foundation. » |
+| Contenu — texte, mise en page, récitations | « Quran data provided by Quran Foundation. », à afficher « wherever Quranic content is surfaced » |
+
+`lib/config/credits.dart` les enregistre **séparément** dans le registre de
+licences de Flutter, à l'endroit où sont déjà les crédits des paquets. Les
+fusionner en une seule ligne aurait été plus court, et faux : l'une couvre des
+fichiers de police, l'autre du contenu servi par l'API.
+
+Enregistrer ne suffit pas — encore faut-il pouvoir les lire. Le bandeau du
+Mushaf porte un menu (icône en haut à droite) dont l'entrée **« À propos et
+crédits »** ouvre `showLicensePage`. C'est ce qui satisfait le « somewhere
+reasonably accessible in your application » : un registre qu'aucun écran
+n'ouvre ne remplit pas la condition.
+
+### Le contenu : ne pas le garder plus d'une semaine
+
+Une seconde obligation vise directement le cache disque du Mushaf :
+
+> Do not cache or store QF Content for more than 1 week unless QF has expressly
+> permitted longer storage, or the content is available through the Content Sync
+> APIs.
+
+Soumaya utilise l'instantané ordinaire du Mushaf, **pas** Content Sync : c'est
+donc le délai d'une semaine qui s'applique. `MushafCache.maxAge` le porte
+(`Duration(days: 7)`), et `readSnapshot()` traite une entrée plus vieille comme
+absente — ce qui déclenche un retéléchargement, au pire une requête par semaine
+et par appareil.
+
+Le contrôle est posé **dans `readSnapshot()`**, par lequel passe aussi
+`read()` : un seul point à vérifier, et les deux chemins de lecture sont
+couverts. `_estPerime()` donne la priorité au champ `saved_at` écrit dans le
+fichier et ne retombe sur la date du fichier qu'en son absence : celle-ci peut
+changer pour une raison étrangère au contenu — une copie, une restauration de
+sauvegarde — et ferait alors **rajeunir** un contenu ancien. Dans le doute, on
+retélécharge ; c'est la seule erreur qui ne viole pas la condition.
 
 ### Deux réglages à affiner à l'œil, contre une page imprimée
 
@@ -449,7 +482,7 @@ faut le traiter avant publication.
 **Vérifié par exécution en local**, sur Flutter 3.47.4 / Dart 3.13.3 :
 
 - `flutter analyze` → `No issues found!` ;
-- `flutter test` → **73 tests, tous verts** ;
+- `flutter test` → **80 tests, tous verts** ;
 - `flutter build apk --release` → APK produit, puis **ouvert et inspecté**
   (ABI, manifeste, service audio, chaînes de code dans le binaire AOT).
 
@@ -496,6 +529,11 @@ contrôle vert ne prouve rien : ce qui compte est qu'il sache refuser.
   fichier est restauré à l'octet près (empreinte SHA-256 comparée avant et
   après). Sans cette borne, `172.32.0.1` — qui est **public** — passerait pour
   local.
+- **le délai de cache du Mushaf** — `test/mushaf_cache_test.dart` encadre la
+  limite par un témoin : une entrée fraîche doit se lire, une entrée à 8 jours
+  doit être refusée **sur les deux chemins de lecture**, et une entrée à 6 jours
+  doit encore passer. Sans ce dernier cas, un contrôle qui refuserait *tout*
+  passerait pour vert.
 
 **Vérifié par mesure, sans exécution** : l'équilibrage des délimiteurs des
 fichiers Dart, la syntaxe du proxy (analyseur Node), la validité du YAML du
@@ -511,10 +549,10 @@ Le binaire publié établit que la chaîne de compilation fonctionne de bout en
 bout ; il ne lit pas encore le Mushaf. C'est le premier essai réel qui le dira,
 et c'est là qu'il faut attendre des ajustements.
 
-**Restent à faire** : l'entrée visible du crédit des polices (§4), le
-téléchargement et le cache hors ligne des audio, l'écran de mémorisation
-(masquage progressif des mots), et la signature de production de l'APK comme de
-l'IPA — les deux sont signés avec des clés de développement.
+**Restent à faire** : le téléchargement et le cache hors ligne des audio,
+l'écran de mémorisation (masquage progressif des mots), et la signature de
+production de l'APK comme de l'IPA — les deux sont signés avec des clés de
+développement.
 
 ---
 

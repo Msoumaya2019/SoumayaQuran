@@ -153,4 +153,13 @@ class AppConfig {
   /// Elle est enregistrée dans le registre de licences de Flutter par
   /// `enregistrerCredits()` (voir `lib/config/credits.dart`).
   static const String fontCredit = 'Quran fonts provided by Quran Foundation.';
+
+  /// Mention exigée pour le **contenu**, distincte de celle des polices.
+  ///
+  /// Les Developer Terms demandent, pour les applications connectées, de
+  /// l'afficher « wherever Quranic content is surfaced ». Elle ne remplace pas
+  /// [fontCredit] : l'une couvre les fichiers de police, l'autre le texte, la
+  /// mise en page et les récitations.
+  static const String contentCredit =
+      'Quran data provided by Quran Foundation.';
 }
