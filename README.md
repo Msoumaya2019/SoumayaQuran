@@ -469,6 +469,19 @@ changer pour une raison étrangère au contenu — une copie, une restauration d
 sauvegarde — et ferait alors **rajeunir** un contenu ancien. Dans le doute, on
 retélécharge ; c'est la seule erreur qui ne viole pas la condition.
 
+### Une règle d'intégration qui vise le rendu navigateur
+
+Les *Integration Rules* de la documentation ajoutent une obligation qui ne concerne **pas**
+l'application mobile — Flutter ne passe pas par un moteur de traduction — mais qui concernera le
+tableau de bord Web :
+
+> If you render Quranic text in a browser, add `<meta name="google" content="notranslate">` and mark
+> Quranic text containers with `translate="no"`.
+
+Un navigateur qui traduit le texte coranique le **falsifie** : ce qui s'affiche n'est plus le Coran.
+La règle protège le contenu autant que le fournisseur. À poser dans le tableau de bord dès sa
+première version, avant qu'il n'affiche du texte coranique.
+
 ### Deux réglages à affiner à l'œil, contre une page imprimée
 
 - `MushafTheme.qcfFontSizeFactor` — proportion de la hauteur de ligne occupée
