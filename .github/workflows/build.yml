@@ -81,9 +81,11 @@ jobs:
       - name: Dépendances
         run: flutter pub get
 
-      # Ce portail compare des octets. Sans .gitattributes, core.autocrlf=true
-      # sous Windows met la même révision en CRLF en local et en LF ici : le
-      # contrôle passerait sur la machine et échouerait à distance.
+      # Le `.gitattributes` normalise les fins de ligne, mais pas pour la raison
+      # qu'on lui prête souvent : `dart format --set-exit-if-changed` TOLÈRE le
+      # CRLF — mesuré, « Formatted 24 files (0 changed) » sur un arbre qui en
+      # comptait 51, dont trois fichiers Dart. La normalisation sert la
+      # lisibilité et le `diff`, pas ce portail.
       - name: Formatage
         run: dart format --output=none --set-exit-if-changed lib test
 
