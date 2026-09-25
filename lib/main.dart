@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 
 import 'app/soumaya_session.dart';
 import 'audio/audio_controller.dart';
+import 'config/credits.dart';
 import 'data/qf_token_provider.dart';
 import 'data/quran_api_service.dart';
 import 'ui/mushaf_page_view.dart';
@@ -14,6 +15,11 @@ import 'ui/mushaf_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Crédit des polices : les conditions de la Quran Foundation l'exigent pour
+  // autoriser la mise en cache. Enregistré avant `runApp` pour qu'il soit dans
+  // le registre dès le premier affichage d'une page de licences.
+  enregistrerCredits();
 
   final session = await _bootstrap();
 

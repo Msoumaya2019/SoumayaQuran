@@ -1,9 +1,15 @@
 # Normalise les fins de ligne dans le dépôt.
 #
 # Sans ce fichier, `core.autocrlf=true` sous Windows écrit la même révision en
-# CRLF sur la machine et en LF dans la CI. Le portail
-# `dart format --set-exit-if-changed` compare des OCTETS : il passerait en local
-# et échouerait à distance, sans que le code soit en cause.
+# CRLF sur la machine et en LF dans la CI : la même révision produirait deux
+# `git diff` différents selon la machine, et une relecture ne saurait plus dire
+# si un changement est réel.
+#
+# ⚠️ Ce n'est PAS une exigence de `dart format`. Ce commentaire l'a affirmé, à
+# tort : mesuré, `dart format --set-exit-if-changed` tolère le CRLF —
+# « Formatted 24 files (0 changed) » sur un arbre qui en comptait 51, dont trois
+# fichiers Dart. La normalisation sert la lisibilité et le `diff`, pas le
+# formatage.
 * text=auto eol=lf
 
 # Les scripts Windows ont besoin de CRLF pour s'exécuter correctement.
@@ -23,6 +29,8 @@
 *.keystore binary
 *.jks binary
 
-# Les polices QCF sont des binaires volumineux : on les exclut de la détection
-# de langue et de la coloration syntaxique.
+# Les polices QCF sont volumineuses et binaires : ni `diff` ni coloration
+# syntaxique n'ont de sens dessus. L'entrée survit au `.gitignore` qui les
+# couvre — elle s'appliquerait si l'un d'eux était un jour ajouté de force.
 assets/mushaf/qcf2/** -diff -text
+assets/mushaf/uthmanic/** -diff -text

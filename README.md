@@ -18,11 +18,13 @@ L'IPA **ne s'installe pas tel quel** : iOS refuse tout binaire non signé. Il se
 re-signe, puis s'installe — les trois murs à franchir sont détaillés au §2,
 section « Re-signer l'IPA ».
 
-Les variables `SOUMAYA_PROXY_BASE_URL`, `SOUMAYA_QF_CLIENT_ID` et
-`SOUMAYA_QCF_FONT_BASE_URL` ne sont pas renseignées dans ce dépôt. L'application
-démarre, mais ne peut joindre ni le proxy de jetons, ni l'API, et n'a aucune
-police QCF pour rendre une page. **Ce binaire établit que la chaîne de
-compilation fonctionne ; il ne lit pas encore le Mushaf.**
+Seule `SOUMAYA_QCF_FONT_BASE_URL` a une valeur par défaut utilisable — le CDN
+public de la Quran Foundation, celui qui sert réellement les polices. Les deux
+autres, `SOUMAYA_PROXY_BASE_URL` et `SOUMAYA_QF_CLIENT_ID`, ne sont pas
+renseignées dans ce dépôt et n'ont pas de défaut : sans elles l'application ne
+peut joindre ni le proxy de jetons, ni l'API. **Ce binaire établit que la chaîne
+de compilation fonctionne ; il ne lit pas encore le Mushaf**, faute de pouvoir
+demander la mise en page d'une page. Les polices, elles, se chargeraient.
 
 ---
 
@@ -100,12 +102,17 @@ de référence, pour relire ce qui a été modifié et pourquoi).
 flutter pub get
 dart format lib test          # avant l'analyse, pas après
 flutter analyze               # No issues found!
-flutter test                  # 55 tests, tous verts
+flutter test                  # 58 tests, tous verts
 
-# Les deux contrôles qui ne demandent ni Flutter ni Mac :
-python tools/verifier_flux.py        # le flux de travail est-il bien formé ?
-python tools/banc_verifier_flux.py   # et ce contrôle sait-il refuser ?
+# Les contrôles qui ne demandent ni Flutter ni Mac :
+python tools/verifier_flux.py          # le flux de travail est-il bien formé ?
+python tools/banc_verifier_flux.py     # et ce contrôle sait-il refuser ?
+python tools/banc_defines_dart.py      # les --dart-define partent-ils à bon escient ?
+python tools/banc_defines_dart.py --falsifier   # et ce contrôle-là ?
 ```
+
+`tools/verifier_ipa.py` s'ajoute à cette liste quand un IPA est sous la main :
+il lit un fichier livré, il ne peut donc pas tourner avant qu'il existe.
 
 Le contrôle des flux passe **en premier dans la CI**, avant l'installation de
 Flutter : il coûte deux secondes, là où une faute de frappe dans un script
@@ -125,6 +132,16 @@ flutter build apk --release \
   --dart-define=SOUMAYA_QF_CLIENT_ID=votre_client_id \
   --dart-define=SOUMAYA_QCF_FONT_BASE_URL=https://votre-cdn/polices
 ```
+
+⚠️ **N'omettez pas la valeur en laissant la variable vide.** Un `--dart-define`
+défini mais vide l'emporte sur le `defaultValue` du code — mesuré : la valeur par
+défaut n'est pas seulement ignorée, elle est remplacée par `""`. Passer
+`--dart-define=SOUMAYA_QCF_FONT_BASE_URL=` supprime donc l'adresse du CDN au lieu
+de la laisser s'appliquer. Si vous ne voulez rien configurer, **n'écrivez pas
+l'option du tout**. C'est ce que fait la CI : `tools/defines_dart.py` n'émet que
+les variables réellement renseignées, et c'est aussi ce qui l'a rendue
+nécessaire — la boucle existait en double, et c'est la copie Android qui avait
+gardé le défaut après correction de l'original.
 
 Produit `build/app/outputs/flutter-apk/app-release.apk` — **51 298 401 octets
 (≈ 49 Mo)** sur la machine de référence, trois ABI embarquées (arm64-v8a,
@@ -238,7 +255,8 @@ Il neutralise aussi le proxy sur la boucle locale (`no_proxy`), sans quoi
 | `lib/ui/mushaf_page_view.dart` | Écran plein écran, `PageView(reverse: true)`, capsule flottante |
 | `lib/ui/mushaf_page_canvas.dart` | Rendu des 15 lignes, taille de police mesurée |
 | `lib/ui/audio_capsule.dart` | Capsule `BackdropFilter`, estompage automatique |
-| `lib/ui/mushaf_font_provider.dart` | Charge les 604 polices QCF, une par page |
+| `lib/ui/mushaf_font_provider.dart` | Charge les polices du Mushaf : une par page, plus la police Unicode des marqueurs de fin de verset |
+| `lib/config/credits.dart` | Enregistre le crédit exigé par les conditions d'usage des polices |
 | `.github/workflows/build.yml` | Contrôle des flux, analyse, tests, APK release, IPA non signé |
 | `platform/proxy/` | Proxy de jetons, sans dépendance |
 | `tools/lancer_flutter.py` | Lance Flutter depuis Git Bash sous Windows (trois pièges d'environnement, cf. §2) |
@@ -246,7 +264,9 @@ Il neutralise aussi le proxy sur la boucle locale (`no_proxy`), sans quoi
 | `tools/banc_verifier_flux.py` | Falsifie ce contrôle par 13 mutations, dont deux sur la présence d'un fichier |
 | `tools/verifier_ipa.py` | Vérifie un IPA livré sans Mac : plateforme du binaire, signature, code Dart embarqué |
 | `tools/banc_verifier_ipa.py` | Falsifie ce contrôle avec de faux IPA — simulateur, plist menteur, code absent |
-| `.gitattributes` | Fins de ligne figées : `dart format` compare des octets, et la CI n'a pas le même `core.autocrlf` que la machine locale |
+| `tools/defines_dart.py` | Décide quels `--dart-define` partent en compilation — et n'en passe aucun de vide |
+| `tools/banc_defines_dart.py` | Éprouve ce choix dans un environnement fabriqué, puis se falsifie lui-même |
+| `.gitattributes` | Fins de ligne figées : la même révision doit se présenter pareil en local et en CI. **Ce n'est pas une exigence de `dart format`** — mesuré, il tolère le CRLF (`Formatted 24 files (0 changed)` sur 51 fichiers en CRLF) ; c'est une exigence de lisibilité et de `diff` |
 
 ### Sémantique de la répétition
 
@@ -262,28 +282,89 @@ Dans la capsule : **appui court** sur le bouton de répétition pour parcourir
 
 ---
 
-## 4. Le point à trancher avant de livrer : les polices
+## 4. Les polices : où elles sont réellement, et ce que la licence permet
 
-C'est le seul élément que ce dépôt ne peut pas fournir.
+### Une correction
 
-Les polices QCF sont **glyph-based** : chaque mot est un glyphe unique, et le
-jeu est dessiné **page par page**. Il faut donc **604 fichiers de police**, un
-par page — ce n'est pas une police couvrant tout le texte. La Content API ne
-les sert pas : l'instantané `mushafs` ne renvoie que le nom de famille attendu
-(`v2`).
+Ce document a d'abord affirmé que « les fichiers de police ne sont pas fournis
+par la Content API » — c'est exact — puis en a conclu qu'il fallait les chercher
+ailleurs, sur la Quranic Universal Library. **La seconde moitié était fausse.**
+Les polices sont bien distribuées par la Quran Foundation, sur un CDN documenté :
 
-`MushafFontProvider` essaie trois sources dans l'ordre : asset local
-`assets/mushaf/qcf2/pXXX.ttf`, puis téléchargement depuis
-`SOUMAYA_QCF_FONT_BASE_URL` avec mise en cache, puis rien. Dans ce dernier cas
-la page affiche un message explicite nommant le fichier manquant — jamais des
-carrés vides.
+```
+https://verses.quran.foundation/fonts/quran/hafs/{version}/ttf/p{page}.ttf
+```
 
-**À faire avant toute publication** : vérifier les conditions de
-redistribution de ces polices auprès de leur éditeur, et les télécharger depuis
-la [Quranic Universal Library](https://qul.tarteel.ai/) (mise en page QCF V2,
-celle que désigne `default_font_name: "v2"`).
+Quatre faits, tous **mesurés** sur ce CDN et non déduits d'une documentation :
 
-Deux autres réglages restent à affiner à l'œil, contre une page imprimée :
+| Fait | Mesure |
+|---|---|
+| Nom de fichier | `p1.ttf` — **sans** zéro de remplissage. `p001.ttf` et `p01.ttf` répondent **404** |
+| Nombre de fichiers | 604 par version ; les 604 répondent **200** |
+| Poids total | **198,2 Mio** par version (163 044 à 884 644 octets par page) |
+| Versions en TTF | `v1` et `v2` seulement. La `v4` (Tajweed) **n'existe pas en TTF** : `v4/ttf/p1.ttf` répond 404, elle n'est servie qu'en `colrv1` et `ot-svg` |
+
+Le nom sans remplissage mérite d'être souligné : renommer les fichiers en
+`p001.ttf` pour « faire propre » produit une page blanche sans message d'erreur.
+C'est pourquoi `MushafFontProvider.assetPathForPage` suit le nom du CDN à la
+lettre.
+
+`v2` est la version employée, parce que c'est ce que désigne
+`default_font_name: "v2"` dans l'instantané du mushaf (`GET
+/resources/snapshots/mushafs/1`, qui donne aussi `pages_count: 604` et
+`lines_per_page: 15`).
+
+### Les marqueurs de fin de verset
+
+Les polices QCF ne couvrent que le texte coranique. Les marqueurs de fin de
+verset — ceux dont `char_type_name` vaut `'end'` — doivent être rendus avec la
+police **Unicode** `UthmanicHafs`, un fichier unique de 242 368 octets :
+
+```
+https://verses.quran.foundation/fonts/quran/hafs/uthmanic_hafs/UthmanicHafs1Ver18.ttf
+```
+
+C'est la recommandation explicite de la documentation de rendu.
+`MushafPageCanvas` l'applique **mot par mot** : un même paragraphe mêle donc
+deux familles, ce qui interdit de composer un `Text` unique — d'où le passage à
+`Text.rich`, la mesure et le rendu partageant la même liste de fragments.
+
+### Ce que la licence autorise, et ce qu'elle interdit
+
+Deux conditions, également contraignantes :
+
+1. détenir un **compte Developer Console actif** ;
+2. créditer la fondation — la formule imposée est « **Quran fonts provided by
+   Quran Foundation.** »
+
+Et une limite qui vise directement ce dépôt : les fichiers « may be distributed
+only as an integrated part of your application » et « may not be offered
+separately through your own API, **asset package**, standalone download, or
+similar offering ».
+
+**Un dépôt Git public contenant les 604 TTF est exactement un *asset package*** :
+il les redistribue séparément de l'application, à quiconque, sans compte ni
+crédit. Les fichiers sont donc **ignorés par git** (`.gitignore`), et ce n'est
+pas une précaution d'hygiène — c'est ce qui rend l'embarquement licite. Rien
+n'est perdu : le CDN du fournisseur est public et documenté, et le dépôt n'a
+jamais eu à porter ces fichiers.
+
+Embarquer les 604 fichiers dans le **binaire**, à l'inverse, est autorisé : ils y
+seraient intégrés. C'est un choix laissé au développeur — déposez les fichiers
+dans `assets/mushaf/qcf2/` et ils seront embarqués. La CI ne les a pas, donc
+l'application livrée télécharge à la demande et met en cache sur disque. À
+198,2 Mio, c'est aussi le choix qui garde l'APK à 51 Mo plutôt qu'à 250.
+
+### Le crédit
+
+`lib/config/credits.dart` enregistre la mention exigée dans le registre de
+licences de Flutter, à l'endroit où sont déjà tous les crédits des paquets.
+**Il reste à poser l'entrée qui y mène** : aucun écran n'ouvre
+`showLicensePage` aujourd'hui, donc la mention est enregistrée mais pas encore
+lisible par un utilisateur. C'est le seul point de licence encore ouvert, et il
+faut le traiter avant publication.
+
+### Deux réglages à affiner à l'œil, contre une page imprimée
 
 - `MushafTheme.qcfFontSizeFactor` — proportion de la hauteur de ligne occupée
   par la police ;
@@ -296,12 +377,13 @@ Deux autres réglages restent à affiner à l'œil, contre une page imprimée :
 **Vérifié par exécution en local**, sur Flutter 3.47.4 / Dart 3.13.3 :
 
 - `flutter analyze` → `No issues found!` ;
-- `flutter test` → **55 tests, tous verts** ;
+- `flutter test` → **58 tests, tous verts** ;
 - `flutter build apk --release` → APK produit, puis **ouvert et inspecté**
   (ABI, manifeste, service audio, chaînes de code dans le binaire AOT).
 
 **Vérifié par la CI**, premier passage vert du premier coup, trois travaux sur
-trois : contrôle des flux (96 vérifications), analyse et tests, APK, IPA.
+trois : contrôle des flux (96 vérifications à l'époque), analyse et tests, APK,
+IPA.
 
 **Vérifié sur le fichier publié, après retéléchargement anonyme** — c'est le
 seul contrôle qui vaille pour une livraison :
@@ -319,7 +401,7 @@ seul contrôle qui vaille pour une livraison :
 Un artefact de flux de travail, lui, répond **401** à un téléchargement
 anonyme : c'est ce qui justifie la version publiée plutôt que le seul artefact.
 
-**Les deux contrôles de ce dépôt ont été falsifiés avant d'y croire.** Un
+**Les trois contrôles de ce dépôt ont été falsifiés avant d'y croire.** Un
 contrôle vert ne prouve rien : ce qui compte est qu'il sache refuser.
 
 - `tools/banc_verifier_flux.py` — 13 cas, dont un témoin. Deux trous trouvés
@@ -327,14 +409,22 @@ contrôle vert ne prouve rien : ce qui compte est qu'il sache refuser.
   `on` en booléen (schéma YAML 1.1) et le contrôle accusait un déclencheur
   absent sur un flux valide ; et la recherche de fermeture d'expression,
   appliquée à du JSON, trouvait les accolades du JSON au lieu de celles de
-  l'expression.
+  l'expression. Le contrôle en compte **102** aujourd'hui.
 - `tools/banc_verifier_ipa.py` — 4 cas : compilation de simulateur, binaire de
   simulateur dissimulé sous un `Info.plist` d'appareil, code Dart absent, et un
   témoin qui doit passer.
+- `tools/banc_defines_dart.py` — 5 cas exécutés dans un environnement fabriqué,
+  plus **3 mutations du contrôle lui-même** : on lui retire l'écartement des
+  valeurs vides, puis le refus des valeurs contenant un blanc, puis la rédaction
+  du résumé — et il doit rougir à chaque fois. Il ne lit pas de texte, il
+  exécute un programme : aucune reformulation ne peut le tromper.
 
 **Vérifié par mesure, sans exécution** : l'équilibrage des délimiteurs des
 fichiers Dart, la syntaxe du proxy (analyseur Node), la validité du YAML du
-flux et du pubspec, et les versions de chaque paquet via l'API de pub.dev.
+flux et du pubspec, les versions de chaque paquet via l'API de pub.dev, et
+**le CDN des polices** — 604 pages sur 604 en HTTP 200, 198,2 Mio au total, le
+nom sans zéro de remplissage confirmé par les 404 de `p001.ttf` et `p01.ttf`, et
+l'absence de `v4/ttf` établie de même.
 
 **Non vérifié : le comportement à l'exécution sur un appareil.** Rien n'a été
 lancé sur un téléphone — ni la lecture audio, ni la synchronisation verset par
@@ -343,8 +433,8 @@ la chaîne de compilation fonctionne de bout en bout ; il ne lit pas encore le
 Mushaf. C'est le premier essai réel qui le dira, et c'est là qu'il faut
 attendre des ajustements.
 
-**Restent à faire** : l'obtention des 604 polices QCF (le point bloquant, §4),
-le téléchargement et le cache hors ligne des audio, l'écran de mémorisation
+**Restent à faire** : l'entrée visible du crédit des polices (§4), le
+téléchargement et le cache hors ligne des audio, l'écran de mémorisation
 (masquage progressif des mots), et la signature de production de l'APK comme de
 l'IPA — les deux sont signés avec des clés de développement.
 
@@ -357,4 +447,9 @@ l'IPA — les deux sont signés avec des clés de développement.
 - Endpoint audio par page : `/content/api/v4/recitations/{recitation_id}/by_page/{page_number}`
 - Instantané du Mushaf : `/content/api/v4/resources/snapshots/mushafs/{id}`
 - OAuth2 : `POST https://oauth2.quran.foundation/oauth2/token`
-- Polices et mise en page : <https://qul.tarteel.ai/docs/glyph-based>
+- Rendu des polices — c'est **la** source qui a corrigé le §4 :
+  <https://api-docs.quran.foundation/docs/tutorials/fonts/font-rendering/>
+- CDN des polices, mesuré ici :
+  <https://verses.quran.foundation/fonts/quran/hafs/v2/ttf/p1.ttf>
+- Contexte général sur les polices glyph-based :
+  <https://qul.tarteel.ai/docs/glyph-based>

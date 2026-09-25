@@ -1,0 +1,8 @@
+Police Unicode des marqueurs de fin de verset : UthmanicHafs1Ver18.ttf
+
+Un seul fichier, 242 368 octets — pas 604. La documentation de rendu est
+explicite : tout mot dont char_type_name vaut « end » doit être rendu avec cette
+police, et non avec la police QCF de la page.
+
+Elle est téléchargée à la demande depuis le CDN officiel si elle n'est pas ici
+(voir ../../README.md). Comme les polices QCF, elle n'est pas versionnée.

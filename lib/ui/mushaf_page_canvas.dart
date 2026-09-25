@@ -12,12 +12,18 @@ import 'mushaf_theme.dart';
 /// texte Unicode. La taille de police est donc mesurée puis ajustée pour que
 /// la ligne la plus large tienne exactement dans la largeur disponible, au
 /// lieu d'être choisie à vue.
+///
+/// Une exception, prescrite par la documentation : les **marqueurs de fin de
+/// verset** (`char_type_name == 'end'`) se rendent mieux avec la police
+/// Unicode qu'avec une police QCF. Ils utilisent donc [unicodeFamily] quand
+/// elle est disponible, et retombent sur la police de la page sinon.
 class MushafPageCanvas extends StatelessWidget {
   const MushafPageCanvas({
     super.key,
     required this.pageNumber,
     required this.layout,
     required this.fontResult,
+    this.unicodeFamily,
   });
 
   final int pageNumber;
@@ -26,6 +32,10 @@ class MushafPageCanvas extends StatelessWidget {
   final MushafPageLayout? layout;
 
   final MushafFontResult fontResult;
+
+  /// Famille de la police Unicode, pour les marqueurs de fin de verset.
+  /// `null` si elle n'a pas pu être chargée.
+  final String? unicodeFamily;
 
   /// Cache des tailles mesurées, pour éviter de remesurer 15 lignes à chaque
   /// image pendant le défilement horizontal.
@@ -74,6 +84,7 @@ class MushafPageCanvas extends StatelessWidget {
         final fontSize = _fittedFontSize(
           lines: lines,
           family: family,
+          unicodeFamily: unicodeFamily,
           maxWidth: constraints.maxWidth,
           maxLineHeight: lineHeight,
         );
@@ -86,18 +97,24 @@ class MushafPageCanvas extends StatelessWidget {
                 child: line.isBlank
                     ? const SizedBox.shrink()
                     : Center(
-                        child: Text(
-                          line.words.map((word) => word.text).join(' '),
+                        child: Text.rich(
+                          TextSpan(
+                            style: TextStyle(
+                              fontFamily: family,
+                              fontSize: fontSize,
+                              height: 1,
+                              color: MushafTheme.ink,
+                            ),
+                            children: _spansFor(
+                              line,
+                              family: family,
+                              unicodeFamily: unicodeFamily,
+                            ),
+                          ),
                           maxLines: 1,
                           softWrap: false,
                           textAlign: TextAlign.center,
                           textDirection: TextDirection.rtl,
-                          style: TextStyle(
-                            fontFamily: family,
-                            fontSize: fontSize,
-                            height: 1,
-                            color: MushafTheme.ink,
-                          ),
                         ),
                       ),
               ),
@@ -107,18 +124,46 @@ class MushafPageCanvas extends StatelessWidget {
     );
   }
 
+  /// Un `TextSpan` par mot : la police Unicode pour les marqueurs de fin.
+  ///
+  /// Les espaces sont portés par le mot qui précède, pour que la concaténation
+  /// des spans reproduise exactement le texte de la ligne — c'est ce qui permet
+  /// à la mesure et au rendu de porter sur la même chaîne.
+  static List<InlineSpan> _spansFor(
+    MushafLine line, {
+    required String family,
+    required String? unicodeFamily,
+  }) {
+    final words = line.words;
+    final spans = <InlineSpan>[];
+    for (var index = 0; index < words.length; index++) {
+      final word = words[index];
+      final dernier = index == words.length - 1;
+      final policeUnicode = unicodeFamily != null && word.isVerseEnd;
+      spans.add(
+        TextSpan(
+          text: dernier ? word.text : '${word.text} ',
+          style: policeUnicode ? TextStyle(fontFamily: unicodeFamily) : null,
+        ),
+      );
+    }
+    return spans;
+  }
+
   /// Taille de police telle que la ligne la plus large occupe [maxWidth],
   /// plafonnée par la hauteur de ligne disponible.
   static double _fittedFontSize({
     required List<MushafLine> lines,
     required String family,
+    required String? unicodeFamily,
     required double maxWidth,
     required double maxLineHeight,
   }) {
     if (maxWidth <= 0 || maxLineHeight <= 0) return 12;
 
     final cacheKey =
-        '$family|${maxWidth.round()}|${maxLineHeight.round()}'
+        '$family|${unicodeFamily ?? "-"}|${maxWidth.round()}'
+        '|${maxLineHeight.round()}'
         '|${lines.map((l) => l.words.length).join(",")}';
     final cached = _fontSizeCache[cacheKey];
     if (cached != null) return cached;
@@ -130,8 +175,12 @@ class MushafPageCanvas extends StatelessWidget {
       if (line.isBlank) continue;
       final painter = TextPainter(
         text: TextSpan(
-          text: line.words.map((word) => word.text).join(' '),
           style: TextStyle(fontFamily: family, fontSize: base, height: 1),
+          children: _spansFor(
+            line,
+            family: family,
+            unicodeFamily: unicodeFamily,
+          ),
         ),
         textDirection: TextDirection.rtl,
         maxLines: 1,

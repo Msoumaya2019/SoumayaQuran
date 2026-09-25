@@ -82,20 +82,75 @@ class AppConfig {
   static const int mushafPaperColor = 0xFFFDFBF7;
 
   // ---------------------------------------------------------------------------
-  // Polices QCF
+  // Polices
   // ---------------------------------------------------------------------------
 
-  /// Base CDN optionnelle pour télécharger les polices QCF page par page.
+  /// Base du CDN de polices de la Quran Foundation.
   ///
-  /// Les fichiers de police ne sont **pas** fournis par la Content API (le
-  /// groupe `mushafs` ne renvoie qu'un `default_font_name`). Si cette base est
-  /// vide et qu'aucun asset local n'est présent, le rendu retombe sur un texte
-  /// Uthmani standard au lieu d'afficher une page cassée.
-  static const String qcfFontBaseUrl = String.fromEnvironment(
+  /// Les fichiers ne sont pas servis par la **Content API** — le groupe
+  /// `mushafs` ne renvoie qu'un `default_font_name` — mais ils sont bien
+  /// distribués par la fondation, sur un CDN documenté :
+  /// <https://api-docs.quran.foundation/docs/tutorials/fonts/font-rendering/>
+  ///
+  /// Mesuré : les 604 pages répondent 200, de 163 044 à 884 644 octets, pour
+  /// **198,2 Mio** au total. Les embarquer dans le paquet est donc exclu ; ils
+  /// se chargent page par page, à la demande.
+  ///
+  /// `SOUMAYA_QCF_FONT_BASE_URL` permet de pointer vers un miroir auto-hébergé.
+  ///
+  /// ⚠️ Une valeur **vide** ne retombe pas sur le défaut toute seule : un
+  /// `--dart-define` défini mais vide l'emporte sur `defaultValue` (mesuré).
+  /// D'où [_rawFontBaseUrl] et [quranFontBaseUrl] plus bas.
+  static const String _rawFontBaseUrl = String.fromEnvironment(
     'SOUMAYA_QCF_FONT_BASE_URL',
-    defaultValue: '',
   );
 
-  /// Modèle d'URL des polices, `{page}` remplacé par le numéro sur 3 chiffres.
-  static const String qcfFontUrlTemplate = '{base}/qcf2/p{page}.ttf';
+  static const String _defaultFontBaseUrl =
+      'https://verses.quran.foundation/fonts/quran/hafs';
+
+  /// Base effectivement utilisée : une valeur vide ou absente retombe sur le CDN
+  /// officiel, jamais sur une chaîne vide qui empêcherait tout chargement.
+  static String get quranFontBaseUrl =>
+      _rawFontBaseUrl.isEmpty ? _defaultFontBaseUrl : _rawFontBaseUrl;
+
+  /// Version du jeu de polices QCF — celle que désigne `default_font_name: "v2"`.
+  ///
+  /// `v1` et `v2` sont servis en `ttf` ; `v4` (Tajweed) ne l'est **pas** —
+  /// mesuré, `v4/ttf/p1.ttf` répond 404, cette version n'existant qu'en
+  /// `colrv1` et `ot-svg`.
+  static const String qcfFontVersion = 'v2';
+
+  /// Modèle d'URL d'une police de page.
+  ///
+  /// Le numéro de page n'est **pas** rempli à trois chiffres : le CDN ne sert
+  /// que `p1.ttf`, et `p001.ttf` comme `p01.ttf` répondent 404 — mesuré. Une
+  /// convention « jolie » de ce côté-ci produit donc un échec silencieux.
+  static const String qcfFontUrlTemplate = '{base}/{version}/ttf/p{page}.ttf';
+
+  /// Police **Unicode** utilisée pour les marqueurs de fin de verset.
+  ///
+  /// La documentation est explicite : les glyphes de numéro de verset se
+  /// rendent mieux avec la police Unicode qu'avec une police QCF, et il faut
+  /// l'employer pour tout `char_type_name == 'end'`. C'est un fichier unique
+  /// (242 368 octets), pas un jeu de 604.
+  static const String unicodeFontUrlTemplate =
+      '{base}/uthmanic_hafs/UthmanicHafs1Ver18.ttf';
+
+  /// Nom de famille sous lequel la police Unicode est enregistrée.
+  ///
+  /// Il est choisi par l'application : `FontLoader` enregistre une police sous
+  /// le nom qu'on lui donne, et `TextStyle.fontFamily` doit simplement
+  /// concorder. La convention `p{page}-{version}` du CDN, elle, ne concerne que
+  /// le web, où la famille vient de la feuille de style.
+  static const String unicodeFontFamily = 'UthmanicHafs';
+
+  /// Mention exigée par les conditions d'usage des polices.
+  ///
+  /// La fondation en pose deux : détenir un compte **Developer Console actif**,
+  /// et créditer la fondation. La formule est imposée dans les termes mêmes —
+  /// la reprendre au mot évite d'avoir à discuter d'une paraphrase.
+  ///
+  /// Elle est enregistrée dans le registre de licences de Flutter par
+  /// `enregistrerCredits()` (voir `lib/config/credits.dart`).
+  static const String fontCredit = 'Quran fonts provided by Quran Foundation.';
 }

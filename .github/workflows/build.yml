@@ -54,6 +54,14 @@ jobs:
             || python3 -m pip install --quiet --disable-pip-version-check --break-system-packages pyyaml
           python3 tools/verifier_flux.py
 
+      # Le contrôle ci-dessus lit du texte ; celui-ci exécute un programme.
+      # `defines_dart.py` décide quels `--dart-define` partent en compilation, et
+      # c'est là que vivait le défaut livré : un `--dart-define` vide l'emporte
+      # sur le `defaultValue` du code. Le banc l'éprouve dans un environnement
+      # fabriqué, puis se falsifie lui-même.
+      - name: Banc des définitions de compilation
+        run: python3 tools/banc_defines_dart.py --falsifier
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -105,12 +113,26 @@ jobs:
 
       - run: flutter pub get
 
-      - name: Compilation de l'APK release
+      # Une seule source pour les `--dart-define` : `tools/defines_dart.py`.
+      # La même boucle vivait en double, une fois par tâche, et c'est la copie
+      # qui avait gardé le défaut quand l'original avait été corrigé.
+      - name: Variables de compilation
+        env:
+          SOUMAYA_PROXY_BASE_URL: ${{ vars.SOUMAYA_PROXY_BASE_URL }}
+          SOUMAYA_QF_CLIENT_ID: ${{ vars.SOUMAYA_QF_CLIENT_ID }}
+          SOUMAYA_QCF_FONT_BASE_URL: ${{ vars.SOUMAYA_QCF_FONT_BASE_URL }}
         run: |
-          flutter build apk --release \
-            --dart-define="SOUMAYA_PROXY_BASE_URL=${{ vars.SOUMAYA_PROXY_BASE_URL }}" \
-            --dart-define="SOUMAYA_QF_CLIENT_ID=${{ vars.SOUMAYA_QF_CLIENT_ID }}" \
-            --dart-define="SOUMAYA_QCF_FONT_BASE_URL=${{ vars.SOUMAYA_QCF_FONT_BASE_URL }}"
+          args="$(python3 tools/defines_dart.py)"
+          echo "DART_DEFINES=$args" >> "$GITHUB_ENV"
+          echo "Définitions transmises : ${args:-(aucune)}"
+
+      # `$DART_DEFINES` et non `${{ env.DART_DEFINES }}` : la variable vient
+      # d'être écrite dans `$GITHUB_ENV`, donc le shell la voit à coup sûr. Le
+      # découpage en mots est voulu — c'est ce qui transmet plusieurs options —
+      # et le contrôle refuse toute valeur contenant un blanc, qui serait
+      # découpée en arguments parasites.
+      - name: Compilation de l'APK release
+        run: flutter build apk --release $DART_DEFINES
 
       - name: Taille de l'APK
         run: ls -lh build/app/outputs/flutter-apk/app-release.apk
@@ -159,33 +181,19 @@ jobs:
           echo "SOUMAYA_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Version lue dans pubspec.yaml : $VERSION"
 
-      # Les variables de dépôt sont facultatives ici. Une variable absente vaut
-      # la chaîne vide, jamais une erreur — et l'application compilée sans elles
-      # ne joint ni proxy ni API. Le dire maintenant évite de conclure « le build
-      # est cassé » devant un écran vide.
+      # Un `--dart-define` défini mais VIDE l'emporte sur le `defaultValue` du
+      # code — mesuré. La boucle qui décide de ce qui part vit désormais dans
+      # `tools/defines_dart.py`, partagée avec la tâche Android : elle écartait
+      # les vides ici, et la copie Android ne le faisait pas.
       - name: Variables de compilation
         env:
           SOUMAYA_PROXY_BASE_URL: ${{ vars.SOUMAYA_PROXY_BASE_URL }}
           SOUMAYA_QF_CLIENT_ID: ${{ vars.SOUMAYA_QF_CLIENT_ID }}
           SOUMAYA_QCF_FONT_BASE_URL: ${{ vars.SOUMAYA_QCF_FONT_BASE_URL }}
         run: |
-          manquantes=""
-          for nom in SOUMAYA_PROXY_BASE_URL SOUMAYA_QF_CLIENT_ID SOUMAYA_QCF_FONT_BASE_URL; do
-            if [ -z "$(printenv "$nom" || true)" ]; then
-              manquantes="$manquantes $nom"
-              echo "::warning::La variable de dépôt $nom est vide."
-            fi
-          done
-          if [ -n "$manquantes" ]; then
-            {
-              echo "### Variables de dépôt absentes"
-              echo
-              echo "Vides : \`${manquantes# }\`."
-              echo
-              echo "L'IPA se compile quand même — c'est son objet ici — mais"
-              echo "l'application ne pourra joindre ni le proxy, ni l'API."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
+          args="$(python3 tools/defines_dart.py)"
+          echo "DART_DEFINES=$args" >> "$GITHUB_ENV"
+          echo "Définitions transmises : ${args:-(aucune)}"
 
       # Le SDK iOS et Xcode n'existent que sur macOS : cette tâche ne peut pas
       # être rejouée sur une machine Windows. C'est la raison d'être de la CI.
@@ -193,11 +201,7 @@ jobs:
       # Apple Developer. Il n'est pas installable tel quel : iOS refuse tout
       # binaire non signé. Il se re-signe ensuite (Sideloadly, AltStore, eSign).
       - name: Compilation iOS sans signature
-        run: |
-          flutter build ios --release --no-codesign \
-            --dart-define="SOUMAYA_PROXY_BASE_URL=${{ vars.SOUMAYA_PROXY_BASE_URL }}" \
-            --dart-define="SOUMAYA_QF_CLIENT_ID=${{ vars.SOUMAYA_QF_CLIENT_ID }}" \
-            --dart-define="SOUMAYA_QCF_FONT_BASE_URL=${{ vars.SOUMAYA_QCF_FONT_BASE_URL }}"
+        run: flutter build ios --release --no-codesign $DART_DEFINES
 
       - name: Empaqueter l'IPA
         run: |

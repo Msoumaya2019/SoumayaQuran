@@ -1,3 +1,8 @@
-Placez ici les 604 polices QCF : p001.ttf … p604.ttf
+Les 604 polices QCF, une par page : p1.ttf … p604.ttf
 
-Voir le README du dossier parent pour la provenance et les conditions d'usage.
+PAS de zéro de remplissage : le CDN officiel ne sert que p1.ttf, et p001.ttf
+comme p01.ttf répondent 404 (mesuré). Un renommage « propre » vers trois
+chiffres produit donc une page blanche, sans message d'erreur.
+
+Ces fichiers ne sont pas versionnés — voir ../README.md, section « Pourquoi elles
+sont ignorées ». Ce n'est pas une question de poids, c'est la licence.

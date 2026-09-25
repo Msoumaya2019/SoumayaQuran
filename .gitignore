@@ -64,3 +64,22 @@ key.properties
 # État local de l'outil Flutter : il ne décrit pas le projet, seulement la
 # machine sur laquelle la commande a tourné.
 .flutter_tool_state
+
+# --- Polices du Mushaf ----------------------------------------------------
+#
+# Ce n'est pas une question de poids, mais de licence. Les conditions de la
+# Quran Foundation autorisent la mise en cache et l'embarquement des polices à
+# deux réserves : disposer d'un compte Developer Console actif, et créditer
+# « Quran fonts provided by Quran Foundation ». Elles précisent surtout que les
+# fichiers « may be distributed only as an integrated part of your application »
+# et « may not be offered separately through your own API, asset package,
+# standalone download, or similar offering ».
+#
+# Un dépôt Git public contenant les 604 fichiers EST un « asset package » : il
+# les redistribue séparément de l'application, à quiconque, sans compte ni
+# crédit. Les ignorer n'est donc pas une précaution d'hygiène, c'est la
+# condition qui rend l'embarquement licite. Les fichiers restent téléchargeables
+# par le fournisseur, à l'adresse documentée (voir assets/mushaf/README.md) :
+# rien n'est perdu, puisque le dépôt n'a jamais eu à les porter.
+assets/mushaf/qcf2/*.ttf
+assets/mushaf/uthmanic/*.ttf

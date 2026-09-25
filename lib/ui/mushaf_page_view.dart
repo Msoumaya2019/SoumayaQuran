@@ -39,6 +39,12 @@ class _MushafPageViewState extends State<MushafPageView> {
   Timer? _idleTimer;
   int _visiblePage = 1;
 
+  /// Famille de la police Unicode, pour les marqueurs de fin de verset.
+  ///
+  /// Chargée une seule fois : c'est un fichier unique, contrairement aux
+  /// 604 polices de page.
+  String? _unicodeFamily;
+
   @override
   void initState() {
     super.initState();
@@ -47,7 +53,17 @@ class _MushafPageViewState extends State<MushafPageView> {
     _pageController = PageController(initialPage: 0);
     widget.session.addListener(_onSessionChanged);
     _preloadFontsAround(1);
+    _loadUnicodeFont();
     _restartIdleTimer();
+  }
+
+  void _loadUnicodeFont() {
+    unawaited(
+      widget.session.fontProvider.resolveUnicodeFamily().then((family) {
+        if (!mounted || family == null) return;
+        setState(() => _unicodeFamily = family);
+      }),
+    );
   }
 
   @override
@@ -228,6 +244,7 @@ class _MushafPageViewState extends State<MushafPageView> {
                           child: MushafPageCanvas(
                             pageNumber: pageNumber,
                             layout: session.snapshot?.pages[pageNumber],
+                            unicodeFamily: _unicodeFamily,
                             fontResult:
                                 _fontFor(pageNumber) ??
                                 const MushafFontResult(

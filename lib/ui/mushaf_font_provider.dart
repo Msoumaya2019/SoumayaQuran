@@ -29,29 +29,49 @@ class MushafFontResult {
   bool get isReady => status == MushafFontStatus.ready && family != null;
 }
 
-/// Fournit la police QCF de chaque page du Mushaf.
+/// Fournit les polices du Mushaf : une par page, plus la police Unicode.
 ///
-/// Les polices QCF sont des polices **glyph-based** : chaque mot du Coran y est
-/// un glyphe unique, et l'ensemble est dessiné page par page. Il faut donc
-/// 604 fichiers de police — un par page — et non une seule police couvrant
-/// tout le texte. Les fichiers ne sont pas fournis par la Content API : le
-/// groupe `mushafs` ne renvoie que le nom de famille attendu (`v2`).
+/// Les polices QCF sont **glyph-based** : chaque mot du Coran y est un glyphe
+/// unique, et le jeu est dessiné **page par page**. Il faut donc 604 fichiers,
+/// un par page — ce n'est pas une police couvrant tout le texte. La Content API
+/// ne les sert pas, mais la Quran Foundation les **distribue** bien, sur un CDN
+/// documenté (voir [AppConfig.quranFontBaseUrl]) :
+///
+/// > « Don't load all 604 QCF fonts upfront. Load only fonts for visible pages. »
+///
+/// Mesuré : les 604 pages répondent 200, de 163 044 à 884 644 octets, pour
+/// 198,2 Mio au total — d'où le chargement à la demande et le cache disque.
 ///
 /// Trois sources sont essayées, dans cet ordre :
-///  1. un asset local `assets/mushaf/qcf2/pXXX.ttf` (hors ligne, immédiat) ;
-///  2. un téléchargement depuis [AppConfig.qcfFontBaseUrl], mis en cache ;
-///  3. rien — on renvoie alors un état `missing`, que l'interface doit
-///     présenter clairement plutôt que d'afficher des carrés vides.
+///  1. un asset local `assets/mushaf/qcf2/p{page}.ttf` (hors ligne, immédiat) ;
+///  2. le cache disque des téléchargements précédents ;
+///  3. le CDN.
 ///
-/// ⚠️ Les conditions de redistribution de ces polices doivent être vérifiées
-/// auprès de leur éditeur avant de les embarquer dans une application publiée.
+/// Si les trois échouent, on renvoie un état `missing` que l'interface présente
+/// clairement, plutôt que des carrés vides dont personne ne peut deviner la
+/// cause.
+///
+/// ## Ce que dit la licence, et ce qu'elle interdit
+///
+/// La fondation autorise la mise en cache et l'embarquement **à deux
+/// conditions** : détenir un compte actif dans la console développeur, et
+/// créditer la fondation quelque part de raisonnablement accessible —
+/// « Quran fonts provided by Quran Foundation. »
+///
+/// Et une limite qui compte pour ce dépôt : les fichiers « may be distributed
+/// only as an integrated part of your application » et « may not be offered
+/// separately through your own API, asset package, standalone download, or
+/// similar offering ». **Un dépôt Git public qui contient les TTF est
+/// exactement un « asset package »** — les fichiers sont donc ignorés par git
+/// (voir `.gitignore`), et le chargement à la demande depuis le CDN est le
+/// chemin normal.
 class MushafFontProvider {
   MushafFontProvider({
     http.Client? client,
     this.cacheDirectory,
     String? baseUrl,
   }) : _client = client ?? http.Client(),
-       _baseUrl = baseUrl ?? AppConfig.qcfFontBaseUrl;
+       _baseUrl = baseUrl ?? AppConfig.quranFontBaseUrl;
 
   final http.Client _client;
 
@@ -65,13 +85,29 @@ class MushafFontProvider {
       <int, Future<MushafFontResult>>{};
   final Set<int> _unavailablePages = <int>{};
 
+  bool _unicodeLoaded = false;
+  bool _unicodeFailed = false;
+  Future<String?>? _unicodeInFlight;
+
   /// Nom de famille utilisé par Flutter pour la page [pageNumber].
+  ///
+  /// On reprend la convention du CDN (`p1-v2`) plutôt que d'en inventer une :
+  /// elle se recoupe avec la documentation, et un écart gratuit entre les deux
+  /// se paie en confusion.
   static String familyNameForPage(int pageNumber) =>
-      'QCF2_P${pageNumber.toString().padLeft(3, '0')}';
+      'p$pageNumber-${AppConfig.qcfFontVersion}';
 
   /// Chemin de l'asset local attendu pour la page [pageNumber].
+  ///
+  /// Le nom suit celui du CDN, **sans remplissage à trois chiffres** : les
+  /// fichiers téléchargés depuis la source officielle se déposent donc tels
+  /// quels, sans renommage.
   static String assetPathForPage(int pageNumber) =>
-      'assets/mushaf/qcf2/p${pageNumber.toString().padLeft(3, '0')}.ttf';
+      'assets/mushaf/qcf2/p$pageNumber.ttf';
+
+  /// Chemin de l'asset local de la police Unicode, si elle est embarquée.
+  static String get unicodeAssetPath =>
+      'assets/mushaf/uthmanic/UthmanicHafs1Ver18.ttf';
 
   /// Résout la police de [pageNumber], en la chargeant si nécessaire.
   ///
@@ -101,9 +137,38 @@ class MushafFontProvider {
     return future;
   }
 
+  /// Résout la police Unicode des marqueurs de fin de verset.
+  ///
+  /// Rend `null` si elle est introuvable — auquel cas le rendu retombe sur la
+  /// police QCF de la page, ce qui est dégradé mais lisible.
+  Future<String?> resolveUnicodeFamily() {
+    if (_unicodeLoaded) {
+      return Future<String?>.value(AppConfig.unicodeFontFamily);
+    }
+    if (_unicodeFailed) return Future<String?>.value(null);
+
+    final pending = _unicodeInFlight;
+    if (pending != null) return pending;
+
+    final future = _loadUnicode().whenComplete(() {
+      _unicodeInFlight = null;
+    });
+    _unicodeInFlight = future;
+    return future;
+  }
+
   Future<MushafFontResult> _load(int pageNumber) async {
     final family = familyNameForPage(pageNumber);
-    final bytes = await _obtainBytes(pageNumber);
+    final bytes = await _obtainBytes(
+      assetPath: assetPathForPage(pageNumber),
+      cacheName: 'p$pageNumber.ttf',
+      remoteUri: _remoteUri(
+        AppConfig.qcfFontUrlTemplate
+            .replaceFirst('{base}', _baseUrl)
+            .replaceFirst('{version}', AppConfig.qcfFontVersion)
+            .replaceFirst('{page}', '$pageNumber'),
+      ),
+    );
 
     if (bytes == null) {
       _unavailablePages.add(pageNumber);
@@ -122,16 +187,57 @@ class MushafFontProvider {
     }
   }
 
-  /// Cherche les octets de la police : asset, puis cache disque, puis réseau.
-  Future<ByteData?> _obtainBytes(int pageNumber) async {
+  Future<String?> _loadUnicode() async {
+    final family = AppConfig.unicodeFontFamily;
+    final bytes = await _obtainBytes(
+      assetPath: unicodeAssetPath,
+      cacheName: 'UthmanicHafs1Ver18.ttf',
+      remoteUri: _remoteUri(
+        AppConfig.unicodeFontUrlTemplate.replaceFirst('{base}', _baseUrl),
+      ),
+    );
+
+    if (bytes == null) {
+      _unicodeFailed = true;
+      debugPrint(
+        '[Soumaya/fonts] police Unicode absente : les marqueurs de fin de '
+        'verset seront rendus avec la police de la page.',
+      );
+      return null;
+    }
+
+    try {
+      final loader = FontLoader(family)..addFont(Future<ByteData>.value(bytes));
+      await loader.load();
+      _unicodeLoaded = true;
+      return family;
+    } on Object catch (error) {
+      debugPrint('[Soumaya/fonts] police Unicode illisible : $error');
+      _unicodeFailed = true;
+      return null;
+    }
+  }
+
+  Uri? _remoteUri(String url) {
+    if (_baseUrl.isEmpty) return null;
+    final uri = Uri.tryParse(url);
+    return uri != null && uri.hasScheme ? uri : null;
+  }
+
+  /// Cherche les octets : asset, puis cache disque, puis réseau.
+  Future<ByteData?> _obtainBytes({
+    required String assetPath,
+    required String cacheName,
+    required Uri? remoteUri,
+  }) async {
     // 1. Asset embarqué.
     try {
-      return await rootBundle.load(assetPathForPage(pageNumber));
+      return await rootBundle.load(assetPath);
     } on Object {
       // Absent du bundle : on continue.
     }
 
-    final cacheFile = await _cacheFileFor(pageNumber);
+    final cacheFile = await _cacheFileFor(cacheName);
 
     // 2. Cache disque.
     if (cacheFile != null && await cacheFile.exists()) {
@@ -143,19 +249,13 @@ class MushafFontProvider {
     }
 
     // 3. Réseau.
-    if (_baseUrl.isEmpty) return null;
-
-    final uri = Uri.parse(
-      AppConfig.qcfFontUrlTemplate
-          .replaceFirst('{base}', _baseUrl)
-          .replaceFirst('{page}', pageNumber.toString().padLeft(3, '0')),
-    );
+    if (remoteUri == null) return null;
 
     try {
-      final response = await _client.get(uri);
+      final response = await _client.get(remoteUri);
       if (response.statusCode != 200 || response.bodyBytes.isEmpty) {
         debugPrint(
-          '[Soumaya/fonts] p$pageNumber : HTTP ${response.statusCode} sur $uri',
+          '[Soumaya/fonts] HTTP ${response.statusCode} sur $remoteUri',
         );
         return null;
       }
@@ -172,13 +272,13 @@ class MushafFontProvider {
       return _toByteData(response.bodyBytes);
     } on Object catch (error) {
       debugPrint(
-        '[Soumaya/fonts] p$pageNumber : téléchargement échoué ($error)',
+        '[Soumaya/fonts] téléchargement échoué sur $remoteUri ($error)',
       );
       return null;
     }
   }
 
-  Future<File?> _cacheFileFor(int pageNumber) async {
+  Future<File?> _cacheFileFor(String name) async {
     var directory = cacheDirectory;
     if (directory == null) {
       try {
@@ -187,9 +287,8 @@ class MushafFontProvider {
         return null;
       }
     }
-    final name = 'p${pageNumber.toString().padLeft(3, '0')}.ttf';
     return File(
-      '${directory.path}${Platform.pathSeparator}qcf2'
+      '${directory.path}${Platform.pathSeparator}fonts'
       '${Platform.pathSeparator}$name',
     );
   }
