@@ -339,6 +339,7 @@ Il neutralise aussi le proxy sur la boucle locale (`no_proxy`), sans quoi
 | `tools/defines_dart.py` | Décide quels `--dart-define` partent en compilation — et n'en passe aucun de vide |
 | `tools/banc_defines_dart.py` | Éprouve ce choix dans un environnement fabriqué, puis se falsifie lui-même |
 | `.gitattributes` | Fins de ligne figées : la même révision doit se présenter pareil en local et en CI. **Ce n'est pas une exigence de `dart format`** — mesuré, il tolère le CRLF (`Formatted 24 files (0 changed)` sur 51 fichiers en CRLF) ; c'est une exigence de lisibilité et de `diff` |
+| `docs/privacy/`, `docs/terms/` | Les **deux documents** que les Developer Terms §3.2 exigent : politique de confidentialité et conditions d'utilisation, servis par GitHub Pages |
 
 ### Sémantique de la répétition
 
